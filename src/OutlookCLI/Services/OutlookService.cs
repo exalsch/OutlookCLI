@@ -887,6 +887,47 @@ public class OutlookService : IOutlookService
         return false;
     }
 
+    public List<string> GetCategories(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        Track(item);
+
+        int itemClass = item.Class;
+        if (itemClass != 43)
+            throw new InvalidOperationException("Item is not a mail message");
+
+        string? cats = null;
+        try { cats = item.Categories; } catch { }
+        return ParseCategories(cats);
+    }
+
+    public bool SetCategories(string entryId, string categories)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 43)
+            {
+                item.Categories = categories;
+                item.Save();
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
     public List<string>? SaveAttachments(string entryId, string outputDirectory)
     {
         if (_namespace == null) throw new InvalidOperationException("Service not initialized");
@@ -1473,6 +1514,13 @@ public class OutlookService : IOutlookService
         return false;
     }
 
+    private static List<string> ParseCategories(string? categories)
+    {
+        if (string.IsNullOrWhiteSpace(categories))
+            return new List<string>();
+        return categories.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+
     private MailMessageSummary MapToSummary(dynamic mail, string folderName)
     {
         string senderEmail;
@@ -1489,6 +1537,9 @@ public class OutlookService : IOutlookService
         int attCount = atts.Count;
         Release(atts);
 
+        string? cats = null;
+        try { cats = mail.Categories; } catch { }
+
         return new MailMessageSummary(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1498,7 +1549,8 @@ public class OutlookService : IOutlookService
             mail.UnRead,
             folderName,
             attCount > 0,
-            attCount
+            attCount,
+            ParseCategories(cats)
         );
     }
 
@@ -1559,6 +1611,9 @@ public class OutlookService : IOutlookService
         }
         Release(atts);
 
+        string? cats = null;
+        try { cats = mail.Categories; } catch { }
+
         return new MailMessage(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1573,7 +1628,8 @@ public class OutlookService : IOutlookService
             mail.HTMLBody ?? "",
             toList,
             ccList,
-            attachmentList
+            attachmentList,
+            ParseCategories(cats)
         );
     }
 

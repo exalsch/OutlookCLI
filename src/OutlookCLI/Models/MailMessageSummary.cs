@@ -9,5 +9,6 @@ public record MailMessageSummary(
     bool IsUnread,
     string Folder,
     bool HasAttachments,
-    int AttachmentCount
+    int AttachmentCount,
+    List<string> Categories
 );

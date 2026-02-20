@@ -62,6 +62,12 @@ outlook mail delete <entry-id> [--no-confirm]
 outlook mail mark-read <entry-id>
 outlook mail mark-unread <entry-id>
 
+# Categorize
+outlook mail categorize <entry-id> --list
+outlook mail categorize <entry-id> --add "Project X"
+outlook mail categorize <entry-id> --set "Urgent" "Follow Up"
+outlook mail categorize <entry-id> --clear
+
 # Utilities
 outlook mail save-attachments <entry-id> --output ./downloads
 outlook mail extract-signature <entry-id> --output signature.html

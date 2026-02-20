@@ -14,5 +14,6 @@ public record MailMessage(
     string BodyHtml,
     List<string> To,
     List<string> Cc,
-    List<Attachment> Attachments
+    List<Attachment> Attachments,
+    List<string> Categories
 );

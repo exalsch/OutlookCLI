@@ -137,7 +137,26 @@ OutlookCLI mail move <entry-id> --to-folder "Archive"
 OutlookCLI mail delete <entry-id> --no-confirm
 ```
 
-### 8. Save Attachments
+### 8. Categorize Emails
+
+```bash
+# View categories on an email
+OutlookCLI mail categorize <entry-id> --list
+
+# Add a category
+OutlookCLI mail categorize <entry-id> --add "Project X"
+
+# Set specific categories (replaces all)
+OutlookCLI mail categorize <entry-id> --set "Urgent" "Follow Up"
+
+# Remove a category
+OutlookCLI mail categorize <entry-id> --remove "Urgent"
+
+# Clear all categories
+OutlookCLI mail categorize <entry-id> --clear
+```
+
+### 9. Save Attachments
 
 ```bash
 OutlookCLI mail save-attachments <entry-id> --output ./downloads

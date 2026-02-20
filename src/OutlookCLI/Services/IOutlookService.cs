@@ -20,6 +20,8 @@ public interface IOutlookService : IDisposable
     bool IsInDeletedItems(string entryId);
     void MoveMail(string entryId, string targetFolderName);
     bool MarkAsRead(string entryId, bool read);
+    List<string> GetCategories(string entryId);
+    bool SetCategories(string entryId, string categories);
     List<string>? SaveAttachments(string entryId, string outputDirectory);
     string? ExtractSignatureWithImages(string entryId);
 

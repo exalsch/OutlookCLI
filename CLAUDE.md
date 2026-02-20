@@ -81,6 +81,11 @@ outlook mail delete <entry-id> [--no-confirm]           # Moves to Deleted Items
 outlook mail move <entry-id> --to-folder <name>
 outlook mail mark-read <entry-id>                       # Mark as read
 outlook mail mark-unread <entry-id>                     # Mark as unread
+outlook mail categorize <entry-id> --list               # Show categories
+outlook mail categorize <entry-id> --add <name>         # Add a category
+outlook mail categorize <entry-id> --remove <name>      # Remove a category
+outlook mail categorize <entry-id> --set <names>        # Replace all categories
+outlook mail categorize <entry-id> --clear              # Remove all categories
 
 # Attachments and signatures
 outlook mail save-attachments <entry-id> [--output <dir>]
