@@ -101,6 +101,10 @@ outlook calendar create --subject <text> --start <datetime> --end <datetime> [--
 outlook calendar update <entry-id> [--subject <text>] [--start <datetime>] [--end <datetime>] [--location <text>] [--body <text>]
 outlook calendar delete <entry-id> [--no-confirm]
 outlook calendar respond <entry-id> --accept|--decline|--tentative [--message <text>]
+
+# Availability
+outlook calendar free-busy --email <email> [--start <date>] [--end <date>]
+outlook calendar find-slots --emails "a@co.com,b@co.com" [--start <date>] [--end <date>] [--duration <min>] [--include-self]
 ```
 
 ## AI Assistant Workflow Examples

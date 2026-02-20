@@ -1625,6 +1625,158 @@ public class OutlookService : IOutlookService
         return false;
     }
 
+    public FreeBusyResult GetFreeBusy(string email, DateTime start, DateTime end)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var recipient = _namespace.CreateRecipient(email);
+        Track(recipient);
+        recipient.Resolve();
+
+        if (!(bool)recipient.Resolved)
+            throw new InvalidOperationException($"Could not resolve recipient: {email}");
+
+        // FreeBusy(Start, MinPerChar, CompleteFormat)
+        // Returns string: '0'=free, '1'=tentative, '2'=busy, '3'=OOF
+        const int intervalMinutes = 30;
+        string freeBusyString = recipient.FreeBusy(start, intervalMinutes, true);
+
+        // Calculate how many characters we need for our range
+        int totalMinutes = (int)(end - start).TotalMinutes;
+        int charsNeeded = totalMinutes / intervalMinutes;
+        if (charsNeeded > freeBusyString.Length)
+            charsNeeded = freeBusyString.Length;
+
+        var slots = new List<FreeBusySlot>();
+        string? currentStatus = null;
+        DateTime? slotStart = null;
+
+        for (int i = 0; i < charsNeeded; i++)
+        {
+            string status = freeBusyString[i] switch
+            {
+                '1' => "Tentative",
+                '2' => "Busy",
+                '3' => "OOF",
+                _ => "Free"
+            };
+
+            if (status != currentStatus)
+            {
+                if (currentStatus != null && currentStatus != "Free" && slotStart.HasValue)
+                {
+                    slots.Add(new FreeBusySlot(slotStart.Value, start.AddMinutes(i * intervalMinutes), currentStatus));
+                }
+                currentStatus = status;
+                slotStart = start.AddMinutes(i * intervalMinutes);
+            }
+        }
+
+        // Close last slot
+        if (currentStatus != null && currentStatus != "Free" && slotStart.HasValue)
+        {
+            slots.Add(new FreeBusySlot(slotStart.Value, start.AddMinutes(charsNeeded * intervalMinutes), currentStatus));
+        }
+
+        return new FreeBusyResult(email, start, end, slots);
+    }
+
+    public List<AvailableSlot> FindAvailableSlots(List<string> emails, DateTime start, DateTime end, int durationMinutes, bool includeSelf = true)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var allEmails = new List<string>(emails);
+
+        // Add self if requested
+        if (includeSelf)
+        {
+            string? selfEmail = null;
+            try
+            {
+                var currentUser = _namespace.CurrentUser;
+                Track(currentUser);
+                selfEmail = currentUser.Address;
+            }
+            catch { }
+
+            if (!string.IsNullOrEmpty(selfEmail) && !allEmails.Contains(selfEmail, StringComparer.OrdinalIgnoreCase))
+            {
+                allEmails.Add(selfEmail);
+            }
+        }
+
+        // Get free/busy for all attendees
+        var freeBusyResults = new List<FreeBusyResult>();
+        foreach (var email in allEmails)
+        {
+            freeBusyResults.Add(GetFreeBusy(email, start, end));
+        }
+
+        // Find slots where everyone is free, filtered to business hours (09:00-17:00) on weekdays
+        var availableSlots = new List<AvailableSlot>();
+        const int intervalMinutes = 30;
+        var current = start;
+
+        while (current.AddMinutes(durationMinutes) <= end)
+        {
+            // Skip weekends
+            if (current.DayOfWeek == DayOfWeek.Saturday || current.DayOfWeek == DayOfWeek.Sunday)
+            {
+                current = current.Date.AddDays(1).AddHours(9);
+                continue;
+            }
+
+            // Skip outside business hours
+            if (current.Hour < 9)
+            {
+                current = current.Date.AddHours(9);
+                continue;
+            }
+            if (current.Hour >= 17 || current.AddMinutes(durationMinutes).Hour > 17 ||
+                (current.AddMinutes(durationMinutes).Hour == 17 && current.AddMinutes(durationMinutes).Minute > 0 && current.AddMinutes(durationMinutes).Date == current.Date))
+            {
+                current = current.Date.AddDays(1).AddHours(9);
+                continue;
+            }
+
+            // Check if slot end exceeds 17:00
+            var slotEnd = current.AddMinutes(durationMinutes);
+            if (slotEnd.TimeOfDay > new TimeSpan(17, 0, 0) && slotEnd.Date == current.Date)
+            {
+                current = current.Date.AddDays(1).AddHours(9);
+                continue;
+            }
+
+            // Check all attendees are free for the entire duration
+            bool allFree = true;
+            foreach (var fb in freeBusyResults)
+            {
+                foreach (var busySlot in fb.BusySlots)
+                {
+                    // Check overlap: busy slot overlaps with [current, slotEnd)
+                    if (busySlot.Start < slotEnd && busySlot.End > current)
+                    {
+                        allFree = false;
+                        break;
+                    }
+                }
+                if (!allFree) break;
+            }
+
+            if (allFree)
+            {
+                availableSlots.Add(new AvailableSlot(current, slotEnd, durationMinutes, allEmails));
+                current = slotEnd; // Skip past this slot to avoid overlapping results
+            }
+            else
+            {
+                current = current.AddMinutes(intervalMinutes);
+            }
+        }
+
+        return availableSlots;
+    }
+
     private static List<string> ParseCategories(string? categories)
     {
         if (string.IsNullOrWhiteSpace(categories))

@@ -35,4 +35,6 @@ public interface IOutlookService : IDisposable
     void UpdateEvent(string entryId, string? subject, DateTime? start, DateTime? end, string? location, string? body);
     bool DeleteEvent(string entryId);
     bool RespondToMeeting(string entryId, string responseType, string? message);
+    FreeBusyResult GetFreeBusy(string email, DateTime start, DateTime end);
+    List<AvailableSlot> FindAvailableSlots(List<string> emails, DateTime start, DateTime end, int durationMinutes, bool includeSelf = true);
 }

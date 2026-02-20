@@ -80,28 +80,35 @@ OutlookCLI mail draft \
 
 ### 4. Reply and Forward
 
+**Always prefer `mail reply` over `mail draft`** when responding to an existing email thread. `reply` preserves the conversation thread, original recipients, and quoted history. Only use `draft` for composing new standalone emails that need user review.
+
 ```bash
-# Reply to an email
-OutlookCLI mail reply <entry-id> --body "Thanks for the update."
+# Reply to an email (preserves thread + includes signature)
+OutlookCLI mail reply <entry-id> --body "Thanks for the update." --signature-file my-signature.html
 
 # Reply to all recipients
-OutlookCLI mail reply <entry-id> --body "Noted, thanks." --reply-all
+OutlookCLI mail reply <entry-id> --body "Noted, thanks." --reply-all --signature-file my-signature.html
 
 # Forward an email
-OutlookCLI mail forward <entry-id> --to colleague@example.com --body "FYI see below."
+OutlookCLI mail forward <entry-id> --to colleague@example.com --body "FYI see below." --signature-file my-signature.html
 ```
 
 ### 5. Search Emails
 
+**Important**: `--from` requires a full email address (e.g. `user@example.com`). Partial names will cause an `OUTLOOK_ERROR`. If you only know the sender's name, use `--query` to search by keyword instead, then filter results by sender name.
+
 ```bash
-# By keyword
+# By keyword (searches subject and body)
 OutlookCLI mail search --query "project update"
 
-# By sender and date range
+# By sender email (must be full address, not a name)
 OutlookCLI mail search --from boss@company.com --after 2024-01-01
 
 # In a specific folder
 OutlookCLI mail search --query "invoice" --folder "Sent Items"
+
+# Combine keyword + sender for precise results
+OutlookCLI mail search --query "meeting" --from user@example.com
 ```
 
 ### 6. Calendar Management
@@ -124,7 +131,20 @@ OutlookCLI calendar create \
 OutlookCLI calendar respond <entry-id> --accept --message "See you there!"
 ```
 
-### 7. Organize Mail
+### 7. Check Availability & Find Meeting Slots
+
+```bash
+# Check someone's free/busy status
+OutlookCLI calendar free-busy --email colleague@company.com --start 2026-02-23 --end 2026-02-24
+
+# Find common free slots for multiple people (defaults: 60 min, business hours, includes self)
+OutlookCLI calendar find-slots --emails "a@company.com,b@company.com" --duration 30 --start 2026-02-24
+
+# Find slots without including your own calendar
+OutlookCLI calendar find-slots --emails "a@company.com" --include-self false
+```
+
+### 8. Organize Mail
 
 ```bash
 # Discover available folders
@@ -137,7 +157,7 @@ OutlookCLI mail move <entry-id> --to-folder "Archive"
 OutlookCLI mail delete <entry-id> --no-confirm
 ```
 
-### 8. Categorize Emails
+### 9. Categorize Emails
 
 ```bash
 # View categories on an email
@@ -154,19 +174,6 @@ OutlookCLI mail categorize <entry-id> --remove "Urgent"
 
 # Clear all categories
 OutlookCLI mail categorize <entry-id> --clear
-```
-
-### 9. View Conversation Thread
-
-```bash
-# Get all emails in a conversation thread (searches Inbox, Sent Mail, Drafts)
-OutlookCLI mail conversation <entry-id>
-
-# With full details (body, attachments, etc.)
-OutlookCLI mail conversation <entry-id> --full
-
-# Limit results
-OutlookCLI mail conversation <entry-id> --limit 10
 ```
 
 ### 10. Save Attachments
@@ -192,16 +199,17 @@ Always check `success` field before processing `data`.
 
 ## Key Rules for the Assistant
 
-1. **Always parse JSON output** - Default output is JSON. Use `--human` only if showing directly to user.
+1. **Always parse JSON output** - Default output is JSON. Use `--human` only when presenting email content directly to the user (e.g. `mail read --human`). For programmatic processing (extracting IDs, checking success), use JSON.
 2. **Use --no-confirm** for batch operations to avoid confirmation prompts blocking automation.
-3. **Prefer drafts over sends** when the user hasn't explicitly said "send". Let them review first.
-4. **Include signature** on all outgoing emails using `--signature-file`. Extract one first if it doesn't exist (see Signature Setup above).
+3. **Prefer `reply` over `draft`** when responding to an existing thread — `reply` preserves conversation history and recipients. Only use `draft` for new standalone emails or when the user explicitly wants to review before any action.
+4. **Include signature** on all outgoing emails (send, reply, forward, draft) using `--signature-file`. Extract one first if it doesn't exist (see Signature Setup above).
 5. **Mark as read** after processing an email so the user's inbox stays clean.
 6. **Entry IDs change** when emails are moved between folders. Re-fetch if needed.
 7. **Date formats**: Use `yyyy-MM-dd` for dates, `"yyyy-MM-dd HH:mm"` for date-times (quote strings with spaces).
 8. **Multiple recipients**: Space-separated after the flag: `--to a@x.com b@x.com`
 9. **HTML emails**: Use `--html` flag when body contains HTML tags. Auto-enabled with `--signature-file`.
 10. **Error handling**: Check for error codes like `NOT_FOUND`, `DELETED_ITEMS_PROTECTED`, `INVALID_ARGS` in output.
+11. **Use `--limit`** on `mail list` to control result count and avoid excessive output.
 
 ## Common Error Codes
 

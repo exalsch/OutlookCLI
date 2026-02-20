@@ -62,6 +62,8 @@ class Program
         calendarCommand.AddCommand(new UpdateEventCommand());
         calendarCommand.AddCommand(new DeleteEventCommand());
         calendarCommand.AddCommand(new RespondCommand());
+        calendarCommand.AddCommand(new FreeBusyCommand());
+        calendarCommand.AddCommand(new FindSlotsCommand());
         rootCommand.AddCommand(calendarCommand);
 
         // Build parser with middleware to capture global options
