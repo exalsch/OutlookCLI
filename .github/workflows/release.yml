@@ -43,6 +43,10 @@ jobs:
           -p:Version=${{ steps.version.outputs.VERSION }}
           --output ./publish
 
+      - name: Copy skill files into publish
+        shell: pwsh
+        run: Copy-Item -Recurse .claude publish/.claude
+
       - name: Create zip archive
         shell: pwsh
         run: Compress-Archive -Path ./publish/* -DestinationPath OutlookCLI-${{ steps.version.outputs.VERSION }}-win-x64.zip
