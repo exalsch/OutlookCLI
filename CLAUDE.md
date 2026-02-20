@@ -138,8 +138,32 @@ outlook mail save-attachments <entry-id> --output ./downloads
 dotnet build
 dotnet run --project src/OutlookCLI -- <command> [options]
 dotnet test
-dotnet publish -c Release -r win-x64 --self-contained
+dotnet publish -c Release -r win-x64               # Framework-dependent (~1 MB, requires .NET 8 Runtime)
+dotnet publish -c Release -r win-x64 --self-contained  # Self-contained (~150 MB, no runtime needed)
 ```
+
+## Release Process
+
+Releases are automated via GitHub Actions (`.github/workflows/release.yml`).
+
+### To create a new release:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow will:
+1. Build and test on `windows-latest`
+2. Publish a **framework-dependent** single-file exe (requires .NET 8 Runtime on user's machine)
+3. Zip it as `OutlookCLI-<version>-win-x64.zip`
+4. Create a GitHub Release with auto-generated release notes and the zip attached
+
+### CI
+- `.github/workflows/ci.yml` runs build + test on every push to `main` and on PRs
+
+### Branching
+- `main` - stable releases, CI runs here
+- `dev` - active development branch
 
 ## Output Format
 
@@ -163,7 +187,7 @@ Human-readable formatted output for terminal use.
 
 ## Safety Features
 
-1. **Confirmation Guard**: Destructive actions (delete) show a MessageBox confirmation unless `--no-confirm` is set
+1. **Confirmation Guard**: Destructive actions (delete) show a console prompt `[y/N]` unless `--no-confirm` is set
 2. **Deleted Items Protection**: Cannot delete items already in Deleted Items folder (returns `DELETED_ITEMS_PROTECTED` error)
 
 ## Important Notes

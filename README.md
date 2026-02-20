@@ -9,23 +9,25 @@ A command-line tool for managing Outlook emails and calendar events via local CO
 - **Full offline access** - Works with cached mail, no internet required
 - **Simple CLI** - Intuitive commands for mail and calendar operations
 
-## Requirements
+## Installation
 
-- Windows 10/11
-- .NET 8.0+ Runtime
-- Microsoft Outlook (desktop) installed and configured
+Download the latest release from the [Releases page](https://github.com/exalsch/OutlookCLI/releases), extract the zip, and run `OutlookCLI.exe`.
+
+### Requirements
+
+- **Windows 10/11**
+- **[.NET 8.0 Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)** (download the "**.NET Runtime**" or "**SDK**" for Windows x64)
+- **Microsoft Outlook** (desktop) installed and configured with an active account
 
 ## Quick Start
 
 ```bash
-# Build
+# Using the downloaded binary
+OutlookCLI mail list --limit 5
+
+# Or build from source
 dotnet build
-
-# Run
 dotnet run --project src/OutlookCLI -- mail list --limit 5
-
-# Or publish a standalone executable
-dotnet publish -c Release -r win-x64 --self-contained
 ```
 
 ## Usage
@@ -150,7 +152,7 @@ Most commands require an `entry-id` argument. These are opaque Outlook identifie
 
 ## Safety Features
 
-- **Confirmation guard** - Delete operations show a confirmation dialog (bypass with `--no-confirm`)
+- **Confirmation guard** - Delete operations prompt for confirmation in the console (bypass with `--no-confirm`)
 - **Deleted Items protection** - Cannot delete items already in Deleted Items (prevents accidental permanent deletion)
 - **Non-destructive defaults** - JSON output, no side effects on read operations
 
@@ -159,7 +161,8 @@ Most commands require an `entry-id` argument. These are opaque Outlook identifie
 ```bash
 dotnet build                                        # Debug build
 dotnet test                                         # Run tests
-dotnet publish -c Release -r win-x64 --self-contained  # Standalone exe
+dotnet publish -c Release -r win-x64               # Framework-dependent exe (~1 MB, requires .NET 8 Runtime)
+dotnet publish -c Release -r win-x64 --self-contained  # Self-contained exe (~150 MB, no runtime needed)
 ```
 
 ## License
