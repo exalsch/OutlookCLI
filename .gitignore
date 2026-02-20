@@ -1,0 +1,32 @@
+# .NET build output
+bin/
+obj/
+publish/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Personal / sensitive files - DO NOT COMMIT
+*.html
+my-signature.*
+signature*.*
+logo*.*
+attachments/
+
+# Misc
+*.log
+*.tmp

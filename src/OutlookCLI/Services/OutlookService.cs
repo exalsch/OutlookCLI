@@ -1,0 +1,1152 @@
+using System.Runtime.InteropServices;
+using OutlookCLI.Models;
+
+namespace OutlookCLI.Services;
+
+/// <summary>
+/// Outlook service using late-binding COM interop (no PIAs required).
+/// </summary>
+public class OutlookService : IOutlookService
+{
+    private dynamic? _app;
+    private dynamic? _namespace;
+    private readonly List<object> _comObjects = new();
+
+    // OlDefaultFolders enum values
+    private const int olFolderInbox = 6;
+    private const int olFolderCalendar = 9;
+    private const int olFolderSentMail = 5;
+    private const int olFolderDrafts = 16;
+    private const int olFolderDeletedItems = 3;
+    private const int olFolderOutbox = 4;
+    private const int olFolderJunk = 23;
+    private const int olFolderContacts = 10;
+
+    // OlItemType enum values
+    private const int olMailItem = 0;
+    private const int olAppointmentItem = 1;
+
+    // OlMailRecipientType enum values
+    private const int olTo = 1;
+    private const int olCC = 2;
+
+    public void Initialize()
+    {
+        var outlookType = Type.GetTypeFromProgID("Outlook.Application");
+        if (outlookType == null)
+        {
+            throw new InvalidOperationException("Outlook is not installed on this machine.");
+        }
+
+        _app = Activator.CreateInstance(outlookType);
+        if (_app == null)
+        {
+            throw new InvalidOperationException("Failed to create Outlook application instance.");
+        }
+
+        Track(_app);
+        _namespace = _app.GetNamespace("MAPI");
+        Track(_namespace);
+    }
+
+    private void Track(object comObject) => _comObjects.Add(comObject);
+
+    public void Dispose()
+    {
+        foreach (var obj in _comObjects.AsEnumerable().Reverse())
+        {
+            try
+            {
+                Marshal.ReleaseComObject(obj);
+            }
+            catch
+            {
+                // Ignore release errors
+            }
+        }
+        _comObjects.Clear();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+    }
+
+    private dynamic GetFolder(string? folderName)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        if (string.IsNullOrEmpty(folderName))
+        {
+            var folder = _namespace.GetDefaultFolder(olFolderInbox);
+            Track(folder);
+            return folder;
+        }
+
+        int? folderId = folderName.ToLowerInvariant() switch
+        {
+            "inbox" => olFolderInbox,
+            "sent" or "sentmail" or "sent mail" => olFolderSentMail,
+            "drafts" => olFolderDrafts,
+            "deleted" or "deleteditems" or "deleted items" or "trash" => olFolderDeletedItems,
+            "outbox" => olFolderOutbox,
+            "junk" or "junkmail" or "junk mail" or "spam" => olFolderJunk,
+            "calendar" => olFolderCalendar,
+            "contacts" => olFolderContacts,
+            _ => null
+        };
+
+        if (folderId.HasValue)
+        {
+            var folder = _namespace.GetDefaultFolder(folderId.Value);
+            Track(folder);
+            return folder;
+        }
+
+        var foundFolder = FindFolderByName(folderName);
+        if (foundFolder == null)
+        {
+            throw new DirectoryNotFoundException($"Folder not found: {folderName}");
+        }
+        return foundFolder;
+    }
+
+    private dynamic? FindFolderByName(string folderName)
+    {
+        if (_namespace == null) return null;
+
+        foreach (var folder in _namespace.Folders)
+        {
+            Track(folder);
+            var found = SearchFolderRecursive(folder, folderName);
+            if (found != null) return found;
+        }
+
+        return null;
+    }
+
+    private dynamic? SearchFolderRecursive(dynamic parent, string folderName)
+    {
+        string parentName = parent.Name;
+        if (parentName.Equals(folderName, StringComparison.OrdinalIgnoreCase))
+            return parent;
+
+        foreach (var subfolder in parent.Folders)
+        {
+            Track(subfolder);
+            string subName = subfolder.Name;
+            if (subName.Equals(folderName, StringComparison.OrdinalIgnoreCase))
+                return subfolder;
+
+            var found = SearchFolderRecursive(subfolder, folderName);
+            if (found != null) return found;
+        }
+
+        return null;
+    }
+
+    private dynamic GetDeletedItemsFolder()
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+        var folder = _namespace.GetDefaultFolder(olFolderDeletedItems);
+        Track(folder);
+        return folder;
+    }
+
+    public IEnumerable<FolderInfo> GetMailFolders()
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var result = new List<FolderInfo>();
+
+        foreach (var folder in _namespace.Folders)
+        {
+            Track(folder);
+            CollectFolders(folder, "", result);
+        }
+
+        return result;
+    }
+
+    private void CollectFolders(dynamic folder, string parentPath, List<FolderInfo> result)
+    {
+        string folderName = folder.Name;
+        var fullPath = string.IsNullOrEmpty(parentPath) ? folderName : $"{parentPath}/{folderName}";
+
+        // Only include mail folders
+        int defaultItemType = folder.DefaultItemType;
+        if (defaultItemType == olMailItem)
+        {
+            result.Add(new FolderInfo(
+                folderName,
+                fullPath,
+                folder.Items.Count,
+                folder.UnReadItemCount
+            ));
+        }
+
+        foreach (var subfolder in folder.Folders)
+        {
+            Track(subfolder);
+            CollectFolders(subfolder, fullPath, result);
+        }
+    }
+
+    public IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit)
+    {
+        var folder = GetFolder(folderName);
+        var items = folder.Items;
+        Track(items);
+
+        items.Sort("[ReceivedTime]", true);
+
+        if (unreadOnly)
+        {
+            items = items.Restrict("[UnRead] = True");
+            Track(items);
+        }
+
+        var result = new List<MailMessageSummary>();
+        int count = 0;
+        string folderNameStr = folder.Name;
+
+        foreach (var item in items)
+        {
+            if (count >= limit) break;
+            Track(item);
+
+            // Check if it's a mail item (Class = 43 for MailItem)
+            try
+            {
+                int itemClass = item.Class;
+                if (itemClass == 43) // olMail
+                {
+                    result.Add(MapToSummary(item, folderNameStr));
+                    count++;
+                }
+            }
+            catch
+            {
+                // Skip items that can't be read
+            }
+        }
+
+        return result;
+    }
+
+    public IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit)
+    {
+        var folder = GetFolder(folderName);
+        var items = folder.Items;
+        Track(items);
+
+        items.Sort("[ReceivedTime]", true);
+
+        if (unreadOnly)
+        {
+            items = items.Restrict("[UnRead] = True");
+            Track(items);
+        }
+
+        var result = new List<MailMessage>();
+        int count = 0;
+        string folderNameStr = folder.Name;
+
+        foreach (var item in items)
+        {
+            if (count >= limit) break;
+            Track(item);
+
+            try
+            {
+                int itemClass = item.Class;
+                if (itemClass == 43) // olMail
+                {
+                    result.Add(MapToFull(item, folderNameStr));
+                    count++;
+                }
+            }
+            catch
+            {
+                // Skip items that can't be read
+            }
+        }
+
+        return result;
+    }
+
+    public MailMessage? GetMail(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 43) // olMail
+            {
+                var folder = item.Parent;
+                Track(folder);
+                string folderName = folder.Name;
+                return MapToFull(item, folderName);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    public IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName)
+    {
+        var folder = GetFolder(folderName);
+        var items = folder.Items;
+        Track(items);
+
+        var conditions = new List<string>();
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            conditions.Add($"@SQL=(\"urn:schemas:httpmail:subject\" LIKE '%{EscapeSearchString(query)}%' OR \"urn:schemas:httpmail:textdescription\" LIKE '%{EscapeSearchString(query)}%')");
+        }
+
+        if (!string.IsNullOrEmpty(from))
+        {
+            conditions.Add($"@SQL=\"urn:schemas:httpmail:fromemail\" LIKE '%{EscapeSearchString(from)}%'");
+        }
+
+        if (after.HasValue)
+        {
+            conditions.Add($"[ReceivedTime] >= '{after.Value:g}'");
+        }
+
+        if (before.HasValue)
+        {
+            conditions.Add($"[ReceivedTime] <= '{before.Value:g}'");
+        }
+
+        if (conditions.Count > 0)
+        {
+            var filter = string.Join(" AND ", conditions);
+            items = items.Restrict(filter);
+            Track(items);
+        }
+
+        items.Sort("[ReceivedTime]", true);
+
+        var result = new List<MailMessageSummary>();
+        string folderNameStr = folder.Name;
+
+        foreach (var item in items)
+        {
+            Track(item);
+            try
+            {
+                int itemClass = item.Class;
+                if (itemClass == 43)
+                {
+                    result.Add(MapToSummary(item, folderNameStr));
+                }
+            }
+            catch
+            {
+                // Skip items that can't be read
+            }
+        }
+
+        return result;
+    }
+
+    private static string EscapeSearchString(string input)
+    {
+        return input.Replace("'", "''");
+    }
+
+    public void SendMail(string[] to, string[]? cc, string subject, string body, bool isHtml = false, string[]? attachments = null)
+    {
+        if (_app == null) throw new InvalidOperationException("Service not initialized");
+
+        var mail = _app.CreateItem(olMailItem);
+        Track(mail);
+
+        mail.To = string.Join(";", to);
+        if (cc != null && cc.Length > 0)
+            mail.CC = string.Join(";", cc);
+        mail.Subject = subject;
+
+        if (isHtml)
+        {
+            mail.HTMLBody = body;
+        }
+        else
+        {
+            mail.Body = body;
+        }
+
+        // Add attachments
+        if (attachments != null)
+        {
+            foreach (var attachmentPath in attachments)
+            {
+                mail.Attachments.Add(attachmentPath);
+            }
+        }
+
+        mail.Send();
+    }
+
+    public string CreateDraft(string[] to, string[]? cc, string subject, string body, bool isHtml = false, string[]? attachments = null)
+    {
+        if (_app == null) throw new InvalidOperationException("Service not initialized");
+
+        var mail = _app.CreateItem(olMailItem);
+        Track(mail);
+
+        mail.To = string.Join(";", to);
+        if (cc != null && cc.Length > 0)
+            mail.CC = string.Join(";", cc);
+        mail.Subject = subject;
+
+        if (isHtml)
+        {
+            mail.HTMLBody = body;
+        }
+        else
+        {
+            mail.Body = body;
+        }
+
+        // Add attachments
+        if (attachments != null)
+        {
+            foreach (var attachmentPath in attachments)
+            {
+                mail.Attachments.Add(attachmentPath);
+            }
+        }
+
+        mail.Save(); // Save as draft, don't send
+        return mail.EntryID;
+    }
+
+    public bool MarkAsRead(string entryId, bool read)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 43) // olMail
+            {
+                item.UnRead = !read;
+                item.Save();
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    public List<string>? SaveAttachments(string entryId, string outputDirectory)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass != 43) return null; // Not a mail item
+
+            var savedFiles = new List<string>();
+            foreach (var attachment in item.Attachments)
+            {
+                Track(attachment);
+                string fileName = attachment.FileName;
+                string filePath = Path.Combine(outputDirectory, fileName);
+
+                // Handle duplicate file names
+                int counter = 1;
+                while (File.Exists(filePath))
+                {
+                    var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                    var ext = Path.GetExtension(fileName);
+                    filePath = Path.Combine(outputDirectory, $"{nameWithoutExt}_{counter}{ext}");
+                    counter++;
+                }
+
+                attachment.SaveAsFile(filePath);
+                savedFiles.Add(filePath);
+            }
+
+            return savedFiles;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public string? ExtractSignatureWithImages(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass != 43) return null; // Not a mail item
+
+            string htmlBody = item.HTMLBody ?? "";
+            if (string.IsNullOrEmpty(htmlBody)) return null;
+
+            // Build a map of Content-ID to base64 data URI
+            var cidToDataUri = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var attachment in item.Attachments)
+            {
+                Track(attachment);
+                try
+                {
+                    // Get the Content-ID (PropertyAccessor)
+                    string? contentId = null;
+                    try
+                    {
+                        // PR_ATTACH_CONTENT_ID = "http://schemas.microsoft.com/mapi/proptag/0x3712001F"
+                        contentId = attachment.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x3712001F");
+                    }
+                    catch
+                    {
+                        // Try alternate method - sometimes CID is in the filename pattern
+                    }
+
+                    if (!string.IsNullOrEmpty(contentId))
+                    {
+                        // Save attachment to temp file to get bytes
+                        string tempPath = Path.Combine(Path.GetTempPath(), $"outlook_att_{Guid.NewGuid()}{Path.GetExtension(attachment.FileName)}");
+                        try
+                        {
+                            attachment.SaveAsFile(tempPath);
+
+                            // Wait for file to be fully written and handle
+                            byte[]? bytes = null;
+                            for (int retry = 0; retry < 20; retry++)
+                            {
+                                try
+                                {
+                                    // Use FileShare.Read to allow reading even if Outlook still has a handle
+                                    using var fs = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                                    bytes = new byte[fs.Length];
+                                    int totalRead = 0;
+                                    while (totalRead < bytes.Length)
+                                    {
+                                        int read = fs.Read(bytes, totalRead, bytes.Length - totalRead);
+                                        if (read == 0) break;
+                                        totalRead += read;
+                                    }
+                                    if (totalRead == bytes.Length) break;
+                                }
+                                catch (IOException)
+                                {
+                                    Thread.Sleep(100);
+                                }
+                            }
+
+                            if (bytes != null && bytes.Length > 0)
+                            {
+                                // Determine MIME type
+                                string mimeType = GetMimeType(attachment.FileName);
+                                string base64 = Convert.ToBase64String(bytes);
+                                string dataUri = $"data:{mimeType};base64,{base64}";
+
+                                cidToDataUri[contentId] = dataUri;
+                            }
+                        }
+                        finally
+                        {
+                            try { File.Delete(tempPath); } catch { }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Skip attachments we can't process
+                }
+            }
+
+            // Extract signature block
+            string? signature = ExtractSignatureBlock(htmlBody);
+            if (string.IsNullOrEmpty(signature)) return null;
+
+            // Replace cid: references with data URIs
+            foreach (var kvp in cidToDataUri)
+            {
+                signature = signature.Replace($"cid:{kvp.Key}", kvp.Value, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return signature;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractSignatureBlock(string htmlBody)
+    {
+        // Try to find signature by id="Signature"
+        var signatureMatch = System.Text.RegularExpressions.Regex.Match(htmlBody,
+            @"<div[^>]*id=""Signature""[^>]*>(.*?)</div>\s*</div>\s*</body>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        if (signatureMatch.Success)
+        {
+            return $"<div id=\"Signature\">{signatureMatch.Groups[1].Value}</div>";
+        }
+
+        // Try broader match for Signature div
+        signatureMatch = System.Text.RegularExpressions.Regex.Match(htmlBody,
+            @"(<div[^>]*id=""Signature""[^>]*>.*?</div>)\s*</body>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        if (signatureMatch.Success)
+        {
+            return signatureMatch.Groups[1].Value;
+        }
+
+        // Try to find signature by common greeting patterns
+        var greetingPatterns = new[]
+        {
+            @"(<p[^>]*>.*?Viele Grüße.*?)</body>",
+            @"(<p[^>]*>.*?Kind regards.*?)</body>",
+            @"(<p[^>]*>.*?Best regards.*?)</body>",
+            @"(<p[^>]*>.*?Mit freundlichen Grüßen.*?)</body>",
+        };
+
+        foreach (var pattern in greetingPatterns)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(htmlBody, pattern,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (match.Success)
+            {
+                return match.Groups[1].Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string GetMimeType(string fileName)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        return ext switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            ".webp" => "image/webp",
+            ".svg" => "image/svg+xml",
+            ".ico" => "image/x-icon",
+            _ => "application/octet-stream"
+        };
+    }
+
+    public void ReplyToMail(string entryId, string body, bool replyAll)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        Track(item);
+
+        int itemClass = item.Class;
+        if (itemClass == 43) // olMail
+        {
+            var reply = replyAll ? item.ReplyAll() : item.Reply();
+            Track(reply);
+            reply.Body = body + "\n\n" + reply.Body;
+            reply.Send();
+        }
+        else
+        {
+            throw new InvalidOperationException("Item is not a mail message");
+        }
+    }
+
+    public void ForwardMail(string entryId, string[] to, string? body)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        Track(item);
+
+        int itemClass = item.Class;
+        if (itemClass == 43) // olMail
+        {
+            var forward = item.Forward();
+            Track(forward);
+            forward.To = string.Join(";", to);
+            if (!string.IsNullOrEmpty(body))
+                forward.Body = body + "\n\n" + forward.Body;
+            forward.Send();
+        }
+        else
+        {
+            throw new InvalidOperationException("Item is not a mail message");
+        }
+    }
+
+    public bool IsInDeletedItems(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 43)
+            {
+                var folder = item.Parent;
+                Track(folder);
+                var deletedItems = GetDeletedItemsFolder();
+                string folderEntryId = folder.EntryID;
+                string deletedEntryId = deletedItems.EntryID;
+                return folderEntryId == deletedEntryId;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    public bool DeleteMail(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 43)
+            {
+                item.Delete();
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    public void MoveMail(string entryId, string targetFolderName)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        Track(item);
+
+        int itemClass = item.Class;
+        if (itemClass == 43)
+        {
+            var targetFolder = GetFolder(targetFolderName);
+            item.Move(targetFolder);
+        }
+        else
+        {
+            throw new InvalidOperationException("Item is not a mail message");
+        }
+    }
+
+    public IEnumerable<CalendarEventSummary> GetEventList(DateTime? start, DateTime? end, int limit)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var folder = _namespace.GetDefaultFolder(olFolderCalendar);
+        Track(folder);
+
+        var items = folder.Items;
+        Track(items);
+
+        items.IncludeRecurrences = true;
+        items.Sort("[Start]");
+
+        var effectiveStart = start ?? DateTime.Today;
+        var effectiveEnd = end ?? DateTime.Today.AddMonths(1);
+
+        var filter = $"[Start] >= '{effectiveStart:g}' AND [Start] <= '{effectiveEnd:g}'";
+        items = items.Restrict(filter);
+        Track(items);
+
+        var result = new List<CalendarEventSummary>();
+        int count = 0;
+
+        foreach (var item in items)
+        {
+            if (count >= limit) break;
+            Track(item);
+
+            try
+            {
+                int itemClass = item.Class;
+                if (itemClass == 26) // olAppointment
+                {
+                    result.Add(MapEventToSummary(item));
+                    count++;
+                }
+            }
+            catch
+            {
+                // Skip items that can't be read
+            }
+        }
+
+        return result;
+    }
+
+    public IEnumerable<CalendarEvent> GetEventListFull(DateTime? start, DateTime? end, int limit)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var folder = _namespace.GetDefaultFolder(olFolderCalendar);
+        Track(folder);
+
+        var items = folder.Items;
+        Track(items);
+
+        items.IncludeRecurrences = true;
+        items.Sort("[Start]");
+
+        var effectiveStart = start ?? DateTime.Today;
+        var effectiveEnd = end ?? DateTime.Today.AddMonths(1);
+
+        var filter = $"[Start] >= '{effectiveStart:g}' AND [Start] <= '{effectiveEnd:g}'";
+        items = items.Restrict(filter);
+        Track(items);
+
+        var result = new List<CalendarEvent>();
+        int count = 0;
+
+        foreach (var item in items)
+        {
+            if (count >= limit) break;
+            Track(item);
+
+            try
+            {
+                int itemClass = item.Class;
+                if (itemClass == 26) // olAppointment
+                {
+                    result.Add(MapEventToFull(item));
+                    count++;
+                }
+            }
+            catch
+            {
+                // Skip items that can't be read
+            }
+        }
+
+        return result;
+    }
+
+    public CalendarEvent? GetEvent(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 26) // olAppointment
+            {
+                return MapEventToFull(item);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    public string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay)
+    {
+        if (_app == null) throw new InvalidOperationException("Service not initialized");
+
+        var apt = _app.CreateItem(olAppointmentItem);
+        Track(apt);
+
+        apt.Subject = subject;
+        apt.Start = start;
+        apt.End = end;
+        apt.AllDayEvent = isAllDay;
+
+        if (!string.IsNullOrEmpty(location))
+            apt.Location = location;
+        if (!string.IsNullOrEmpty(body))
+            apt.Body = body;
+
+        apt.Save();
+        return apt.EntryID;
+    }
+
+    public void UpdateEvent(string entryId, string? subject, DateTime? start, DateTime? end, string? location, string? body)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        Track(item);
+
+        int itemClass = item.Class;
+        if (itemClass == 26) // olAppointment
+        {
+            if (!string.IsNullOrEmpty(subject))
+                item.Subject = subject;
+            if (start.HasValue)
+                item.Start = start.Value;
+            if (end.HasValue)
+                item.End = end.Value;
+            if (location != null)
+                item.Location = location;
+            if (body != null)
+                item.Body = body;
+
+            item.Save();
+        }
+        else
+        {
+            throw new InvalidOperationException("Item is not a calendar event");
+        }
+    }
+
+    public bool DeleteEvent(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 26) // olAppointment
+            {
+                item.Delete();
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    public bool RespondToMeeting(string entryId, string responseType, string? message)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        try
+        {
+            var item = _namespace.GetItemFromID(entryId);
+            Track(item);
+
+            int itemClass = item.Class;
+            if (itemClass == 26) // olAppointment
+            {
+                dynamic response;
+                switch (responseType.ToLowerInvariant())
+                {
+                    case "accept":
+                        response = item.Respond(3); // olMeetingAccepted = 3
+                        break;
+                    case "decline":
+                        response = item.Respond(4); // olMeetingDeclined = 4
+                        break;
+                    case "tentative":
+                        response = item.Respond(2); // olMeetingTentative = 2
+                        break;
+                    default:
+                        return false;
+                }
+
+                if (response != null)
+                {
+                    Track(response);
+                    if (!string.IsNullOrEmpty(message))
+                    {
+                        response.Body = message + "\n\n" + response.Body;
+                    }
+                    response.Send();
+                }
+
+                return true;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private MailMessageSummary MapToSummary(dynamic mail, string folderName)
+    {
+        string senderEmail;
+        try
+        {
+            senderEmail = mail.SenderEmailAddress ?? "";
+        }
+        catch
+        {
+            senderEmail = "";
+        }
+
+        return new MailMessageSummary(
+            mail.EntryID,
+            mail.Subject ?? "",
+            mail.SenderName ?? "",
+            senderEmail,
+            mail.ReceivedTime,
+            mail.UnRead,
+            folderName,
+            mail.Attachments.Count > 0,
+            mail.Attachments.Count
+        );
+    }
+
+    private MailMessage MapToFull(dynamic mail, string folderName)
+    {
+        string senderEmail;
+        try
+        {
+            senderEmail = mail.SenderEmailAddress ?? "";
+        }
+        catch
+        {
+            senderEmail = "";
+        }
+
+        var toList = new List<string>();
+        var ccList = new List<string>();
+
+        foreach (var recipient in mail.Recipients)
+        {
+            Track(recipient);
+            int recipientType = recipient.Type;
+            string address = recipient.Address ?? recipient.Name;
+            if (recipientType == olTo)
+                toList.Add(address);
+            else if (recipientType == olCC)
+                ccList.Add(address);
+        }
+
+        var attachments = new List<Attachment>();
+        foreach (var att in mail.Attachments)
+        {
+            Track(att);
+            attachments.Add(new Attachment(
+                att.FileName,
+                att.Size,
+                att.Type.ToString()
+            ));
+        }
+
+        return new MailMessage(
+            mail.EntryID,
+            mail.Subject ?? "",
+            mail.SenderName ?? "",
+            senderEmail,
+            mail.ReceivedTime,
+            mail.UnRead,
+            folderName,
+            mail.Attachments.Count > 0,
+            mail.Attachments.Count,
+            mail.Body ?? "",
+            mail.HTMLBody ?? "",
+            toList,
+            ccList,
+            attachments
+        );
+    }
+
+    private CalendarEventSummary MapEventToSummary(dynamic apt)
+    {
+        return new CalendarEventSummary(
+            apt.EntryID,
+            apt.Subject ?? "",
+            apt.Start,
+            apt.End,
+            apt.Location ?? "",
+            apt.AllDayEvent,
+            apt.IsRecurring
+        );
+    }
+
+    private CalendarEvent MapEventToFull(dynamic apt)
+    {
+        var attendees = new List<string>();
+        foreach (var recipient in apt.Recipients)
+        {
+            Track(recipient);
+            string address = recipient.Address ?? recipient.Name;
+            attendees.Add(address);
+        }
+
+        string? recurrencePattern = null;
+        bool isRecurring = apt.IsRecurring;
+        if (isRecurring)
+        {
+            try
+            {
+                var pattern = apt.GetRecurrencePattern();
+                Track(pattern);
+                recurrencePattern = pattern.RecurrenceType.ToString();
+            }
+            catch
+            {
+                recurrencePattern = "Unknown";
+            }
+        }
+
+        return new CalendarEvent(
+            apt.EntryID,
+            apt.Subject ?? "",
+            apt.Start,
+            apt.End,
+            apt.Location ?? "",
+            apt.AllDayEvent,
+            isRecurring,
+            apt.Body ?? "",
+            attendees,
+            apt.Organizer ?? "",
+            recurrencePattern
+        );
+    }
+}
