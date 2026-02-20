@@ -790,6 +790,117 @@ public class OutlookService : IOutlookService
         return result;
     }
 
+    public IEnumerable<MailMessageSummary> GetConversation(string entryId, int limit)
+    {
+        var (items, folderNames) = GetConversationItems(entryId);
+        var result = new List<MailMessageSummary>();
+        foreach (var (item, folder) in items.Zip(folderNames))
+        {
+            try
+            {
+                result.Add(MapToSummary(item, folder));
+            }
+            finally
+            {
+                Release(item);
+            }
+            if (result.Count >= limit) break;
+        }
+        return result;
+    }
+
+    public IEnumerable<MailMessage> GetConversationFull(string entryId, int limit)
+    {
+        var (items, folderNames) = GetConversationItems(entryId);
+        var result = new List<MailMessage>();
+        foreach (var (item, folder) in items.Zip(folderNames))
+        {
+            try
+            {
+                result.Add(MapToFull(item, folder));
+            }
+            finally
+            {
+                Release(item);
+            }
+            if (result.Count >= limit) break;
+        }
+        return result;
+    }
+
+    private (List<dynamic> items, List<string> folderNames) GetConversationItems(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var sourceItem = _namespace.GetItemFromID(entryId);
+        Track(sourceItem);
+
+        string conversationTopic = sourceItem.ConversationTopic;
+        Release(sourceItem);
+
+        if (string.IsNullOrEmpty(conversationTopic))
+            return (new List<dynamic>(), new List<string>());
+
+        var escapedTopic = conversationTopic.Replace("'", "''");
+        var filter = $"[ConversationTopic] = '{escapedTopic}'";
+
+        var seen = new HashSet<string>();
+        var allItems = new List<(dynamic item, string folder, DateTime received)>();
+
+        int[] folderIds = { olFolderInbox, olFolderSentMail, olFolderDrafts };
+        foreach (var folderId in folderIds)
+        {
+            dynamic? folder = null;
+            try
+            {
+                folder = _namespace.GetDefaultFolder(folderId);
+                var items = folder.Items;
+                var filtered = items.Restrict(filter);
+                string folderName = folder.Name;
+                int count = filtered.Count;
+
+                for (int i = 1; i <= count; i++)
+                {
+                    dynamic? item = null;
+                    try
+                    {
+                        item = filtered[i];
+                        int itemClass = item.Class;
+                        if (itemClass == 43)
+                        {
+                            string eid = item.EntryID;
+                            if (seen.Add(eid))
+                            {
+                                DateTime received = item.ReceivedTime;
+                                allItems.Add((item, folderName, received));
+                                item = null; // prevent Release below
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Release(item);
+                    }
+                }
+                Release(filtered);
+                Release(items);
+            }
+            catch { }
+            finally
+            {
+                Release(folder);
+            }
+        }
+
+        // Sort chronologically (oldest first)
+        allItems.Sort((a, b) => a.received.CompareTo(b.received));
+
+        return (
+            allItems.Select(x => x.item).ToList(),
+            allItems.Select(x => x.folder).ToList()
+        );
+    }
+
     private static string EscapeSearchString(string input)
     {
         return input.Replace("'", "''");
@@ -1540,6 +1651,9 @@ public class OutlookService : IOutlookService
         string? cats = null;
         try { cats = mail.Categories; } catch { }
 
+        string? conversationTopic = null;
+        try { conversationTopic = mail.ConversationTopic; } catch { }
+
         return new MailMessageSummary(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1550,7 +1664,8 @@ public class OutlookService : IOutlookService
             folderName,
             attCount > 0,
             attCount,
-            ParseCategories(cats)
+            ParseCategories(cats),
+            conversationTopic
         );
     }
 
@@ -1614,6 +1729,9 @@ public class OutlookService : IOutlookService
         string? cats = null;
         try { cats = mail.Categories; } catch { }
 
+        string? conversationTopic = null;
+        try { conversationTopic = mail.ConversationTopic; } catch { }
+
         return new MailMessage(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1629,7 +1747,8 @@ public class OutlookService : IOutlookService
             toList,
             ccList,
             attachmentList,
-            ParseCategories(cats)
+            ParseCategories(cats),
+            conversationTopic
         );
     }
 

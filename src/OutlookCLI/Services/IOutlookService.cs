@@ -12,6 +12,8 @@ public interface IOutlookService : IDisposable
     IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit);
     MailMessage? GetMail(string entryId);
     IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName);
+    IEnumerable<MailMessageSummary> GetConversation(string entryId, int limit);
+    IEnumerable<MailMessage> GetConversationFull(string entryId, int limit);
     void SendMail(string[] to, string[]? cc, string subject, string body, bool isHtml = false, string[]? attachments = null);
     string CreateDraft(string[] to, string[]? cc, string subject, string body, bool isHtml = false, string[]? attachments = null);
     void ReplyToMail(string entryId, string body, bool replyAll);

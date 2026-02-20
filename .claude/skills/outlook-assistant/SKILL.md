@@ -156,7 +156,20 @@ OutlookCLI mail categorize <entry-id> --remove "Urgent"
 OutlookCLI mail categorize <entry-id> --clear
 ```
 
-### 9. Save Attachments
+### 9. View Conversation Thread
+
+```bash
+# Get all emails in a conversation thread (searches Inbox, Sent Mail, Drafts)
+OutlookCLI mail conversation <entry-id>
+
+# With full details (body, attachments, etc.)
+OutlookCLI mail conversation <entry-id> --full
+
+# Limit results
+OutlookCLI mail conversation <entry-id> --limit 10
+```
+
+### 10. Save Attachments
 
 ```bash
 OutlookCLI mail save-attachments <entry-id> --output ./downloads

@@ -72,9 +72,10 @@ outlook mail search --query <text> [--from <email>] [--after <date>] [--before <
 outlook mail send --to <emails> [--cc <emails>] --subject <text> [--body <text>] [--body-file <path>] [--html] [--signature-file <path>] [--attachment <files>]
 outlook mail draft --to <emails> --subject <text> [--body <text>] [--html] [--signature-file <path>] [--attachment <files>]
 
-# Reply and forward
+# Reply, forward, and conversation
 outlook mail reply <entry-id> --body <text> [--reply-all]
 outlook mail forward <entry-id> --to <emails> [--body <text>]
+outlook mail conversation <entry-id> [--limit <n>]            # Get all emails in same thread
 
 # Organize
 outlook mail delete <entry-id> [--no-confirm]           # Moves to Deleted Items

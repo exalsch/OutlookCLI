@@ -10,5 +10,6 @@ public record MailMessageSummary(
     string Folder,
     bool HasAttachments,
     int AttachmentCount,
-    List<string> Categories
+    List<string> Categories,
+    string? ConversationTopic = null
 );

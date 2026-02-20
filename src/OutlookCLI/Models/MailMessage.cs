@@ -15,5 +15,6 @@ public record MailMessage(
     List<string> To,
     List<string> Cc,
     List<Attachment> Attachments,
-    List<string> Categories
+    List<string> Categories,
+    string? ConversationTopic = null
 );

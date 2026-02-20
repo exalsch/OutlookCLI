@@ -51,6 +51,7 @@ class Program
         mailCommand.AddCommand(new SaveAttachmentsCommand());
         mailCommand.AddCommand(new ExtractSignatureCommand());
         mailCommand.AddCommand(new CategorizeCommand());
+        mailCommand.AddCommand(new ConversationCommand());
         rootCommand.AddCommand(mailCommand);
 
         // Calendar command group
