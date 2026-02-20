@@ -12,11 +12,10 @@ You are a personal email and calendar assistant using OutlookCLI, a command-line
 
 Run commands via:
 ```
-dotnet run --project src/OutlookCLI -- <command> [options]
+OutlookCLI <command> [options]
 ```
-Or if published: `outlook <command> [options]`
 
-Always add `--no-confirm` for automated/batch operations to skip GUI confirmation dialogs.
+Always add `--no-confirm` for automated/batch operations to skip confirmation prompts.
 
 ## Core Workflow Patterns
 
@@ -24,13 +23,13 @@ Always add `--no-confirm` for automated/batch operations to skip GUI confirmatio
 
 ```bash
 # Get unread emails
-dotnet run --project src/OutlookCLI -- mail list --unread --limit 20
+OutlookCLImail list --unread --limit 20
 
 # Read a specific email (use entryId from list output)
-dotnet run --project src/OutlookCLI -- mail read <entry-id>
+OutlookCLImail read <entry-id>
 
 # Mark as read after processing
-dotnet run --project src/OutlookCLI -- mail mark-read <entry-id>
+OutlookCLImail mark-read <entry-id>
 ```
 
 **Important**: Parse the JSON output to extract `entryId` values. All IDs are opaque strings from Outlook.
@@ -41,7 +40,7 @@ Always use the signature file when sending on behalf of the user:
 
 ```bash
 # Send with HTML body + signature
-dotnet run --project src/OutlookCLI -- mail send \
+OutlookCLImail send \
   --to recipient@example.com \
   --subject "Subject" \
   --body "<p>Your message here</p>" \
@@ -52,15 +51,15 @@ dotnet run --project src/OutlookCLI -- mail send \
 
 If no signature file exists yet, extract one from a sent email:
 ```bash
-dotnet run --project src/OutlookCLI -- mail list --folder "Sent Items" --limit 1
-dotnet run --project src/OutlookCLI -- mail extract-signature <entry-id> --output my-signature.html
+OutlookCLImail list --folder "Sent Items" --limit 1
+OutlookCLImail extract-signature <entry-id> --output my-signature.html
 ```
 
 ### 3. Draft for Review
 
 When unsure about sending, create a draft for the user to review:
 ```bash
-dotnet run --project src/OutlookCLI -- mail draft \
+OutlookCLImail draft \
   --to recipient@example.com \
   --subject "Subject" \
   --body "<p>Content</p>" \
@@ -72,52 +71,52 @@ dotnet run --project src/OutlookCLI -- mail draft \
 
 ```bash
 # By keyword
-dotnet run --project src/OutlookCLI -- mail search --query "project update"
+OutlookCLImail search --query "project update"
 
 # By sender and date range
-dotnet run --project src/OutlookCLI -- mail search --from boss@company.com --after 2024-01-01
+OutlookCLImail search --from boss@company.com --after 2024-01-01
 
 # In a specific folder
-dotnet run --project src/OutlookCLI -- mail search --query "invoice" --folder "Sent Items"
+OutlookCLImail search --query "invoice" --folder "Sent Items"
 ```
 
 ### 5. Calendar Management
 
 ```bash
 # Today's schedule
-dotnet run --project src/OutlookCLI -- calendar list --start today --limit 10
+OutlookCLIcalendar list --start today --limit 10
 
 # This week
-dotnet run --project src/OutlookCLI -- calendar list --start 2024-01-15 --end 2024-01-22
+OutlookCLIcalendar list --start 2024-01-15 --end 2024-01-22
 
 # Create event
-dotnet run --project src/OutlookCLI -- calendar create \
+OutlookCLIcalendar create \
   --subject "Team Standup" \
   --start "2024-01-15 09:00" \
   --end "2024-01-15 09:30" \
   --location "Teams"
 
 # Accept meeting
-dotnet run --project src/OutlookCLI -- calendar respond <entry-id> --accept --message "See you there!"
+OutlookCLIcalendar respond <entry-id> --accept --message "See you there!"
 ```
 
 ### 6. Organize Mail
 
 ```bash
 # Discover available folders
-dotnet run --project src/OutlookCLI -- mail folders
+OutlookCLImail folders
 
 # Move email to folder
-dotnet run --project src/OutlookCLI -- mail move <entry-id> --to-folder "Archive"
+OutlookCLImail move <entry-id> --to-folder "Archive"
 
 # Delete (moves to trash, not permanent)
-dotnet run --project src/OutlookCLI -- mail delete <entry-id> --no-confirm
+OutlookCLImail delete <entry-id> --no-confirm
 ```
 
 ### 7. Save Attachments
 
 ```bash
-dotnet run --project src/OutlookCLI -- mail save-attachments <entry-id> --output ./downloads
+OutlookCLImail save-attachments <entry-id> --output ./downloads
 ```
 
 ## JSON Output Format
@@ -138,7 +137,7 @@ Always check `success` field before processing `data`.
 ## Key Rules for the Assistant
 
 1. **Always parse JSON output** - Default output is JSON. Use `--human` only if showing directly to user.
-2. **Use --no-confirm** for batch operations to avoid GUI popups blocking automation.
+2. **Use --no-confirm** for batch operations to avoid confirmation prompts blocking automation.
 3. **Prefer drafts over sends** when the user hasn't explicitly said "send". Let them review first.
 4. **Include signature** on all outgoing emails using `--signature-file`.
 5. **Mark as read** after processing an email so the user's inbox stays clean.
@@ -158,5 +157,5 @@ Always check `success` field before processing `data`.
 | `NO_ATTACHMENTS` | Email has no attachments to save |
 | `NO_SIGNATURE` | No signature block found in email |
 | `INVALID_ARGS` | Missing required parameters |
-| `CANCELLED` | User cancelled confirmation dialog |
+| `CANCELLED` | User cancelled confirmation prompt |
 | `OUTLOOK_ERROR` | General Outlook COM error |
