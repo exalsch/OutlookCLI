@@ -5,6 +5,8 @@ namespace OutlookCLI.Services;
 
 /// <summary>
 /// Outlook service using late-binding COM interop (no PIAs required).
+/// All COM collection iteration uses index-based access (1-based) to avoid
+/// enumerator leaks that cause "too many items open" errors.
 /// </summary>
 public class OutlookService : IOutlookService
 {
@@ -51,18 +53,19 @@ public class OutlookService : IOutlookService
 
     private void Track(object comObject) => _comObjects.Add(comObject);
 
+    private static void Release(object? comObject)
+    {
+        if (comObject != null)
+        {
+            try { Marshal.ReleaseComObject(comObject); } catch { }
+        }
+    }
+
     public void Dispose()
     {
         foreach (var obj in _comObjects.AsEnumerable().Reverse())
         {
-            try
-            {
-                Marshal.ReleaseComObject(obj);
-            }
-            catch
-            {
-                // Ignore release errors
-            }
+            Release(obj);
         }
         _comObjects.Clear();
         GC.Collect();
@@ -82,14 +85,14 @@ public class OutlookService : IOutlookService
 
         int? folderId = folderName.ToLowerInvariant() switch
         {
-            "inbox" => olFolderInbox,
-            "sent" or "sentmail" or "sent mail" => olFolderSentMail,
-            "drafts" => olFolderDrafts,
-            "deleted" or "deleteditems" or "deleted items" or "trash" => olFolderDeletedItems,
-            "outbox" => olFolderOutbox,
-            "junk" or "junkmail" or "junk mail" or "spam" => olFolderJunk,
-            "calendar" => olFolderCalendar,
-            "contacts" => olFolderContacts,
+            "inbox" or "posteingang" => olFolderInbox,
+            "sent" or "sentmail" or "sent mail" or "sent items" or "gesendete elemente" => olFolderSentMail,
+            "drafts" or "entwürfe" => olFolderDrafts,
+            "deleted" or "deleteditems" or "deleted items" or "trash" or "gelöschte elemente" => olFolderDeletedItems,
+            "outbox" or "postausgang" => olFolderOutbox,
+            "junk" or "junkmail" or "junk mail" or "spam" or "junk-e-mail" => olFolderJunk,
+            "calendar" or "kalender" => olFolderCalendar,
+            "contacts" or "kontakte" => olFolderContacts,
             _ => null
         };
 
@@ -112,12 +115,18 @@ public class OutlookService : IOutlookService
     {
         if (_namespace == null) return null;
 
-        foreach (var folder in _namespace.Folders)
+        // Search within the default mailbox only
+        var inbox = _namespace.GetDefaultFolder(olFolderInbox);
+        var mailboxRoot = inbox.Parent;
+        Release(inbox);
+
+        var found = SearchFolderRecursive(mailboxRoot, folderName);
+        if (found != null)
         {
-            Track(folder);
-            var found = SearchFolderRecursive(folder, folderName);
-            if (found != null) return found;
+            if (!ReferenceEquals(found, mailboxRoot)) Release(mailboxRoot);
+            return found;
         }
+        Release(mailboxRoot);
 
         return null;
     }
@@ -128,16 +137,21 @@ public class OutlookService : IOutlookService
         if (parentName.Equals(folderName, StringComparison.OrdinalIgnoreCase))
             return parent;
 
-        foreach (var subfolder in parent.Folders)
+        var subfolders = parent.Folders;
+        int subCount = subfolders.Count;
+        for (int i = 1; i <= subCount; i++)
         {
-            Track(subfolder);
-            string subName = subfolder.Name;
-            if (subName.Equals(folderName, StringComparison.OrdinalIgnoreCase))
-                return subfolder;
-
+            var subfolder = subfolders[i];
             var found = SearchFolderRecursive(subfolder, folderName);
-            if (found != null) return found;
+            if (found != null)
+            {
+                if (!ReferenceEquals(found, subfolder)) Release(subfolder);
+                Release(subfolders);
+                return found;
+            }
+            Release(subfolder);
         }
+        Release(subfolders);
 
         return null;
     }
@@ -156,10 +170,19 @@ public class OutlookService : IOutlookService
 
         var result = new List<FolderInfo>();
 
-        foreach (var folder in _namespace.Folders)
+        // Start from the default Inbox's parent (the user's mailbox root)
+        // instead of _namespace.Folders which includes all stores/shared mailboxes
+        var inbox = _namespace.GetDefaultFolder(olFolderInbox);
+        var mailboxRoot = inbox.Parent;
+        Release(inbox);
+
+        try
         {
-            Track(folder);
-            CollectFolders(folder, "", result);
+            CollectFolders(mailboxRoot, "", result);
+        }
+        finally
+        {
+            Release(mailboxRoot);
         }
 
         return result;
@@ -174,19 +197,33 @@ public class OutlookService : IOutlookService
         int defaultItemType = folder.DefaultItemType;
         if (defaultItemType == olMailItem)
         {
+            var items = folder.Items;
+            int itemCount = items.Count;
+            Release(items);
+
             result.Add(new FolderInfo(
                 folderName,
                 fullPath,
-                folder.Items.Count,
+                itemCount,
                 folder.UnReadItemCount
             ));
         }
 
-        foreach (var subfolder in folder.Folders)
+        var subfolders = folder.Folders;
+        int subCount = subfolders.Count;
+        for (int i = 1; i <= subCount; i++)
         {
-            Track(subfolder);
-            CollectFolders(subfolder, fullPath, result);
+            var subfolder = subfolders[i];
+            try
+            {
+                CollectFolders(subfolder, fullPath, result);
+            }
+            finally
+            {
+                Release(subfolder);
+            }
         }
+        Release(subfolders);
     }
 
     public IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit)
@@ -206,15 +243,14 @@ public class OutlookService : IOutlookService
         var result = new List<MailMessageSummary>();
         int count = 0;
         string folderNameStr = folder.Name;
+        int totalItems = items.Count;
 
-        foreach (var item in items)
+        for (int i = 1; i <= totalItems && count < limit; i++)
         {
-            if (count >= limit) break;
-            Track(item);
-
-            // Check if it's a mail item (Class = 43 for MailItem)
+            dynamic? item = null;
             try
             {
+                item = items[i];
                 int itemClass = item.Class;
                 if (itemClass == 43) // olMail
                 {
@@ -225,6 +261,10 @@ public class OutlookService : IOutlookService
             catch
             {
                 // Skip items that can't be read
+            }
+            finally
+            {
+                Release(item);
             }
         }
 
@@ -248,14 +288,14 @@ public class OutlookService : IOutlookService
         var result = new List<MailMessage>();
         int count = 0;
         string folderNameStr = folder.Name;
+        int totalItems = items.Count;
 
-        foreach (var item in items)
+        for (int i = 1; i <= totalItems && count < limit; i++)
         {
-            if (count >= limit) break;
-            Track(item);
-
+            dynamic? item = null;
             try
             {
+                item = items[i];
                 int itemClass = item.Class;
                 if (itemClass == 43) // olMail
                 {
@@ -266,6 +306,10 @@ public class OutlookService : IOutlookService
             catch
             {
                 // Skip items that can't be read
+            }
+            finally
+            {
+                Release(item);
             }
         }
 
@@ -337,12 +381,14 @@ public class OutlookService : IOutlookService
 
         var result = new List<MailMessageSummary>();
         string folderNameStr = folder.Name;
+        int totalItems = items.Count;
 
-        foreach (var item in items)
+        for (int i = 1; i <= totalItems; i++)
         {
-            Track(item);
+            dynamic? item = null;
             try
             {
+                item = items[i];
                 int itemClass = item.Class;
                 if (itemClass == 43)
                 {
@@ -352,6 +398,10 @@ public class OutlookService : IOutlookService
             catch
             {
                 // Skip items that can't be read
+            }
+            finally
+            {
+                Release(item);
             }
         }
 
@@ -468,25 +518,35 @@ public class OutlookService : IOutlookService
             if (itemClass != 43) return null; // Not a mail item
 
             var savedFiles = new List<string>();
-            foreach (var attachment in item.Attachments)
+            var atts = item.Attachments;
+            int attCount = atts.Count;
+            for (int i = 1; i <= attCount; i++)
             {
-                Track(attachment);
-                string fileName = attachment.FileName;
-                string filePath = Path.Combine(outputDirectory, fileName);
-
-                // Handle duplicate file names
-                int counter = 1;
-                while (File.Exists(filePath))
+                var attachment = atts[i];
+                try
                 {
-                    var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-                    var ext = Path.GetExtension(fileName);
-                    filePath = Path.Combine(outputDirectory, $"{nameWithoutExt}_{counter}{ext}");
-                    counter++;
-                }
+                    string fileName = attachment.FileName;
+                    string filePath = Path.Combine(outputDirectory, fileName);
 
-                attachment.SaveAsFile(filePath);
-                savedFiles.Add(filePath);
+                    // Handle duplicate file names
+                    int counter = 1;
+                    while (File.Exists(filePath))
+                    {
+                        var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                        var ext = Path.GetExtension(fileName);
+                        filePath = Path.Combine(outputDirectory, $"{nameWithoutExt}_{counter}{ext}");
+                        counter++;
+                    }
+
+                    attachment.SaveAsFile(filePath);
+                    savedFiles.Add(filePath);
+                }
+                finally
+                {
+                    Release(attachment);
+                }
             }
+            Release(atts);
 
             return savedFiles;
         }
@@ -514,9 +574,11 @@ public class OutlookService : IOutlookService
             // Build a map of Content-ID to base64 data URI
             var cidToDataUri = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var attachment in item.Attachments)
+            var attachments = item.Attachments;
+            int attCount = attachments.Count;
+            for (int i = 1; i <= attCount; i++)
             {
-                Track(attachment);
+                var attachment = attachments[i];
                 try
                 {
                     // Get the Content-ID (PropertyAccessor)
@@ -583,7 +645,12 @@ public class OutlookService : IOutlookService
                 {
                     // Skip attachments we can't process
                 }
+                finally
+                {
+                    Release(attachment);
+                }
             }
+            Release(attachments);
 
             // Extract signature block
             string? signature = ExtractSignatureBlock(htmlBody);
@@ -800,14 +867,14 @@ public class OutlookService : IOutlookService
 
         var result = new List<CalendarEventSummary>();
         int count = 0;
+        int totalItems = items.Count;
 
-        foreach (var item in items)
+        for (int i = 1; i <= totalItems && count < limit; i++)
         {
-            if (count >= limit) break;
-            Track(item);
-
+            dynamic? item = null;
             try
             {
+                item = items[i];
                 int itemClass = item.Class;
                 if (itemClass == 26) // olAppointment
                 {
@@ -818,6 +885,10 @@ public class OutlookService : IOutlookService
             catch
             {
                 // Skip items that can't be read
+            }
+            finally
+            {
+                Release(item);
             }
         }
 
@@ -846,14 +917,14 @@ public class OutlookService : IOutlookService
 
         var result = new List<CalendarEvent>();
         int count = 0;
+        int totalItems = items.Count;
 
-        foreach (var item in items)
+        for (int i = 1; i <= totalItems && count < limit; i++)
         {
-            if (count >= limit) break;
-            Track(item);
-
+            dynamic? item = null;
             try
             {
+                item = items[i];
                 int itemClass = item.Class;
                 if (itemClass == 26) // olAppointment
                 {
@@ -864,6 +935,10 @@ public class OutlookService : IOutlookService
             catch
             {
                 // Skip items that can't be read
+            }
+            finally
+            {
+                Release(item);
             }
         }
 
@@ -1028,6 +1103,10 @@ public class OutlookService : IOutlookService
             senderEmail = "";
         }
 
+        var atts = mail.Attachments;
+        int attCount = atts.Count;
+        Release(atts);
+
         return new MailMessageSummary(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1036,8 +1115,8 @@ public class OutlookService : IOutlookService
             mail.ReceivedTime,
             mail.UnRead,
             folderName,
-            mail.Attachments.Count > 0,
-            mail.Attachments.Count
+            attCount > 0,
+            attCount
         );
     }
 
@@ -1056,27 +1135,47 @@ public class OutlookService : IOutlookService
         var toList = new List<string>();
         var ccList = new List<string>();
 
-        foreach (var recipient in mail.Recipients)
+        var recipients = mail.Recipients;
+        int recipientCount = recipients.Count;
+        for (int i = 1; i <= recipientCount; i++)
         {
-            Track(recipient);
-            int recipientType = recipient.Type;
-            string address = recipient.Address ?? recipient.Name;
-            if (recipientType == olTo)
-                toList.Add(address);
-            else if (recipientType == olCC)
-                ccList.Add(address);
+            var recipient = recipients[i];
+            try
+            {
+                int recipientType = recipient.Type;
+                string address = recipient.Address ?? recipient.Name;
+                if (recipientType == olTo)
+                    toList.Add(address);
+                else if (recipientType == olCC)
+                    ccList.Add(address);
+            }
+            finally
+            {
+                Release(recipient);
+            }
         }
+        Release(recipients);
 
-        var attachments = new List<Attachment>();
-        foreach (var att in mail.Attachments)
+        var attachmentList = new List<Attachment>();
+        var atts = mail.Attachments;
+        int attCount = atts.Count;
+        for (int i = 1; i <= attCount; i++)
         {
-            Track(att);
-            attachments.Add(new Attachment(
-                att.FileName,
-                att.Size,
-                att.Type.ToString()
-            ));
+            var att = atts[i];
+            try
+            {
+                attachmentList.Add(new Attachment(
+                    att.FileName,
+                    att.Size,
+                    att.Type.ToString()
+                ));
+            }
+            finally
+            {
+                Release(att);
+            }
         }
+        Release(atts);
 
         return new MailMessage(
             mail.EntryID,
@@ -1086,13 +1185,13 @@ public class OutlookService : IOutlookService
             mail.ReceivedTime,
             mail.UnRead,
             folderName,
-            mail.Attachments.Count > 0,
-            mail.Attachments.Count,
+            attCount > 0,
+            attCount,
             mail.Body ?? "",
             mail.HTMLBody ?? "",
             toList,
             ccList,
-            attachments
+            attachmentList
         );
     }
 
@@ -1112,12 +1211,22 @@ public class OutlookService : IOutlookService
     private CalendarEvent MapEventToFull(dynamic apt)
     {
         var attendees = new List<string>();
-        foreach (var recipient in apt.Recipients)
+        var recipients = apt.Recipients;
+        int recipientCount = recipients.Count;
+        for (int i = 1; i <= recipientCount; i++)
         {
-            Track(recipient);
-            string address = recipient.Address ?? recipient.Name;
-            attendees.Add(address);
+            var recipient = recipients[i];
+            try
+            {
+                string address = recipient.Address ?? recipient.Name;
+                attendees.Add(address);
+            }
+            finally
+            {
+                Release(recipient);
+            }
         }
+        Release(recipients);
 
         string? recurrencePattern = null;
         bool isRecurring = apt.IsRecurring;
