@@ -32,6 +32,401 @@ public class OutlookService : IOutlookService
     private const int olTo = 1;
     private const int olCC = 2;
 
+    /// <summary>
+    /// Maps localized folder names to OlDefaultFolders constants.
+    /// Keys are lowercase. Covers: EN, DE, SV, CS, DA, NO, FI, NL, FR, ES, IT,
+    /// PT (BR/PT), PL, HU, RO, TR, JA, ZH, KO, RU, AR, HE.
+    /// </summary>
+    private static readonly Dictionary<string, int> FolderAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // --- Inbox ---
+        ["inbox"] = olFolderInbox,
+        // DE
+        ["posteingang"] = olFolderInbox,
+        // SV
+        ["inkorg"] = olFolderInbox,
+        // CS
+        ["doručená pošta"] = olFolderInbox,
+        // DA
+        ["indbakke"] = olFolderInbox,
+        // NO
+        ["innboks"] = olFolderInbox,
+        // FI
+        ["saapuneet"] = olFolderInbox,
+        // NL
+        ["postvak in"] = olFolderInbox,
+        // FR
+        ["boîte de réception"] = olFolderInbox,
+        ["boite de reception"] = olFolderInbox,
+        // ES
+        ["bandeja de entrada"] = olFolderInbox,
+        // IT
+        ["posta in arrivo"] = olFolderInbox,
+        // PT
+        ["caixa de entrada"] = olFolderInbox,
+        // PL
+        ["skrzynka odbiorcza"] = olFolderInbox,
+        // HU
+        ["beérkezett üzenetek"] = olFolderInbox,
+        ["beerkezett uzenetek"] = olFolderInbox,
+        // RO
+        ["mesaje primite"] = olFolderInbox,
+        // TR
+        ["gelen kutusu"] = olFolderInbox,
+        // JA
+        ["受信トレイ"] = olFolderInbox,
+        // ZH
+        ["收件箱"] = olFolderInbox,
+        // KO
+        ["받은 편지함"] = olFolderInbox,
+        // RU
+        ["входящие"] = olFolderInbox,
+        // AR
+        ["علبة الوارد"] = olFolderInbox,
+        // HE
+        ["דואר נכנס"] = olFolderInbox,
+
+        // --- Sent Items ---
+        ["sent"] = olFolderSentMail,
+        ["sent mail"] = olFolderSentMail,
+        ["sentmail"] = olFolderSentMail,
+        ["sent items"] = olFolderSentMail,
+        // DE
+        ["gesendete elemente"] = olFolderSentMail,
+        // SV
+        ["skickat"] = olFolderSentMail,
+        // CS
+        ["odeslaná pošta"] = olFolderSentMail,
+        // DA
+        ["sendt post"] = olFolderSentMail,
+        // NO
+        ["sendte elementer"] = olFolderSentMail,
+        // FI
+        ["lähetetyt"] = olFolderSentMail,
+        // NL
+        ["verzonden items"] = olFolderSentMail,
+        // FR
+        ["éléments envoyés"] = olFolderSentMail,
+        ["elements envoyes"] = olFolderSentMail,
+        // ES
+        ["elementos enviados"] = olFolderSentMail,
+        // IT
+        ["posta inviata"] = olFolderSentMail,
+        // PT
+        ["itens enviados"] = olFolderSentMail,
+        // PL
+        ["elementy wysłane"] = olFolderSentMail,
+        ["elementy wyslane"] = olFolderSentMail,
+        // HU
+        ["elküldött elemek"] = olFolderSentMail,
+        ["elkuldott elemek"] = olFolderSentMail,
+        // RO
+        ["elemente trimise"] = olFolderSentMail,
+        // TR
+        ["gönderilmiş öğeler"] = olFolderSentMail,
+        ["gonderilmis ogeler"] = olFolderSentMail,
+        // JA
+        ["送信済みアイテム"] = olFolderSentMail,
+        // ZH
+        ["已发送邮件"] = olFolderSentMail,
+        // KO
+        ["보낸 편지함"] = olFolderSentMail,
+        // RU
+        ["отправленные"] = olFolderSentMail,
+        // AR
+        ["العناصر المرسلة"] = olFolderSentMail,
+        // HE
+        ["פריטים שנשלחו"] = olFolderSentMail,
+
+        // --- Drafts ---
+        ["drafts"] = olFolderDrafts,
+        // DE
+        ["entwürfe"] = olFolderDrafts,
+        // SV
+        ["utkast"] = olFolderDrafts,
+        // CS
+        ["koncepty"] = olFolderDrafts,
+        // DA
+        ["kladder"] = olFolderDrafts,
+        // NO
+        ["kladd"] = olFolderDrafts,
+        // FI
+        ["luonnokset"] = olFolderDrafts,
+        // NL
+        ["concepten"] = olFolderDrafts,
+        // FR
+        ["brouillons"] = olFolderDrafts,
+        // ES
+        ["borradores"] = olFolderDrafts,
+        // IT
+        ["bozze"] = olFolderDrafts,
+        // PT
+        ["rascunhos"] = olFolderDrafts,
+        // PL
+        ["wersje robocze"] = olFolderDrafts,
+        // HU
+        ["piszkozatok"] = olFolderDrafts,
+        // RO
+        ["ciorne"] = olFolderDrafts,
+        // TR
+        ["taslaklar"] = olFolderDrafts,
+        // JA
+        ["下書き"] = olFolderDrafts,
+        // ZH
+        ["草稿"] = olFolderDrafts,
+        // KO
+        ["임시 보관함"] = olFolderDrafts,
+        // RU
+        ["черновики"] = olFolderDrafts,
+        // AR
+        ["المسودات"] = olFolderDrafts,
+        // HE
+        ["טיוטות"] = olFolderDrafts,
+
+        // --- Deleted Items ---
+        ["deleted"] = olFolderDeletedItems,
+        ["deleted items"] = olFolderDeletedItems,
+        ["deleteditems"] = olFolderDeletedItems,
+        ["trash"] = olFolderDeletedItems,
+        // DE
+        ["gelöschte elemente"] = olFolderDeletedItems,
+        // SV
+        ["borttagna objekt"] = olFolderDeletedItems,
+        // CS
+        ["odstraněná pošta"] = olFolderDeletedItems,
+        // DA
+        ["slettet post"] = olFolderDeletedItems,
+        // NO
+        ["slettede elementer"] = olFolderDeletedItems,
+        // FI
+        ["poistetut"] = olFolderDeletedItems,
+        // NL
+        ["verwijderde items"] = olFolderDeletedItems,
+        // FR
+        ["éléments supprimés"] = olFolderDeletedItems,
+        ["elements supprimes"] = olFolderDeletedItems,
+        // ES
+        ["elementos eliminados"] = olFolderDeletedItems,
+        // IT
+        ["posta eliminata"] = olFolderDeletedItems,
+        // PT-BR
+        ["itens excluídos"] = olFolderDeletedItems,
+        ["itens excluidos"] = olFolderDeletedItems,
+        // PT-PT
+        ["itens eliminados"] = olFolderDeletedItems,
+        // PL
+        ["elementy usunięte"] = olFolderDeletedItems,
+        ["elementy usuniete"] = olFolderDeletedItems,
+        // HU
+        ["törölt elemek"] = olFolderDeletedItems,
+        ["torolt elemek"] = olFolderDeletedItems,
+        // RO
+        ["elemente șterse"] = olFolderDeletedItems,
+        ["elemente sterse"] = olFolderDeletedItems,
+        // TR
+        ["silinmiş öğeler"] = olFolderDeletedItems,
+        ["silinmis ogeler"] = olFolderDeletedItems,
+        // JA
+        ["削除済みアイテム"] = olFolderDeletedItems,
+        // ZH
+        ["已删除邮件"] = olFolderDeletedItems,
+        // KO
+        ["지운 편지함"] = olFolderDeletedItems,
+        // RU
+        ["удалённые"] = olFolderDeletedItems,
+        ["удаленные"] = olFolderDeletedItems,
+        // AR
+        ["العناصر المحذوفة"] = olFolderDeletedItems,
+        // HE
+        ["פריטים שנמחקו"] = olFolderDeletedItems,
+
+        // --- Outbox ---
+        ["outbox"] = olFolderOutbox,
+        // DE
+        ["postausgang"] = olFolderOutbox,
+        // SV
+        ["utkorg"] = olFolderOutbox,
+        // CS
+        ["pošta k odeslání"] = olFolderOutbox,
+        // DA
+        ["udbakke"] = olFolderOutbox,
+        // NO
+        ["utboks"] = olFolderOutbox,
+        // FI
+        ["lähtevät"] = olFolderOutbox,
+        // NL
+        ["postvak uit"] = olFolderOutbox,
+        // FR
+        ["boîte d'envoi"] = olFolderOutbox,
+        ["boite d'envoi"] = olFolderOutbox,
+        // ES
+        ["bandeja de salida"] = olFolderOutbox,
+        // IT
+        ["posta in uscita"] = olFolderOutbox,
+        // PT
+        ["caixa de saída"] = olFolderOutbox,
+        ["caixa de saida"] = olFolderOutbox,
+        // PL
+        ["skrzynka nadawcza"] = olFolderOutbox,
+        // HU
+        ["postázandó üzenetek"] = olFolderOutbox,
+        ["postazando uzenetek"] = olFolderOutbox,
+        // RO
+        ["mesaje de ieșire"] = olFolderOutbox,
+        ["mesaje de iesire"] = olFolderOutbox,
+        // TR
+        ["giden kutusu"] = olFolderOutbox,
+        // JA
+        ["送信トレイ"] = olFolderOutbox,
+        // ZH
+        ["发件箱"] = olFolderOutbox,
+        // KO
+        ["보낼 편지함"] = olFolderOutbox,
+        // RU
+        ["исходящие"] = olFolderOutbox,
+        // AR
+        ["علبة الصادر"] = olFolderOutbox,
+        // HE
+        ["דואר יוצא"] = olFolderOutbox,
+
+        // --- Junk Email ---
+        ["junk"] = olFolderJunk,
+        ["junk mail"] = olFolderJunk,
+        ["junkmail"] = olFolderJunk,
+        ["junk email"] = olFolderJunk,
+        ["spam"] = olFolderJunk,
+        // DE
+        ["junk-e-mail"] = olFolderJunk,
+        // SV
+        ["skräppost"] = olFolderJunk,
+        // CS
+        ["nevyžádaná pošta"] = olFolderJunk,
+        // DA
+        ["uønsket mail"] = olFolderJunk,
+        // NO
+        ["søppelpost"] = olFolderJunk,
+        // FI
+        ["roskaposti"] = olFolderJunk,
+        // NL
+        ["ongewenste e-mail"] = olFolderJunk,
+        // FR
+        ["courrier indésirable"] = olFolderJunk,
+        ["courrier indesirable"] = olFolderJunk,
+        // ES
+        ["correo no deseado"] = olFolderJunk,
+        // IT
+        ["posta indesiderata"] = olFolderJunk,
+        // PT
+        ["lixo eletrônico"] = olFolderJunk,
+        ["lixo eletronico"] = olFolderJunk,
+        // PL
+        ["wiadomości-śmieci"] = olFolderJunk,
+        ["wiadomosci-smieci"] = olFolderJunk,
+        // HU
+        ["levélszemét"] = olFolderJunk,
+        ["levelszemet"] = olFolderJunk,
+        // RO
+        ["e-mail nedorit"] = olFolderJunk,
+        // TR
+        ["gereksiz e-posta"] = olFolderJunk,
+        // JA
+        ["迷惑メール"] = olFolderJunk,
+        // ZH
+        ["垃圾邮件"] = olFolderJunk,
+        // KO
+        ["정크 메일"] = olFolderJunk,
+        // RU
+        ["нежелательная почта"] = olFolderJunk,
+        // AR
+        ["البريد الإلكتروني غير الهام"] = olFolderJunk,
+        // HE
+        ["דואר זבל"] = olFolderJunk,
+
+        // --- Calendar ---
+        ["calendar"] = olFolderCalendar,
+        // DE
+        ["kalender"] = olFolderCalendar,
+        // SV (same as DE)
+        // CS
+        ["kalendář"] = olFolderCalendar,
+        // DA (same as DE)
+        // NO (same as DE)
+        // FI
+        ["kalenteri"] = olFolderCalendar,
+        // NL
+        ["agenda"] = olFolderCalendar,
+        // FR
+        ["calendrier"] = olFolderCalendar,
+        // ES
+        ["calendario"] = olFolderCalendar,
+        // IT (same as ES)
+        // PT (same as ES)
+        // PL
+        ["kalendarz"] = olFolderCalendar,
+        // HU
+        ["naptár"] = olFolderCalendar,
+        ["naptar"] = olFolderCalendar,
+        // RO (same as EN)
+        // TR
+        ["takvim"] = olFolderCalendar,
+        // JA
+        ["予定表"] = olFolderCalendar,
+        // ZH
+        ["日历"] = olFolderCalendar,
+        // KO
+        ["일정"] = olFolderCalendar,
+        // RU
+        ["календарь"] = olFolderCalendar,
+        // AR
+        ["التقويم"] = olFolderCalendar,
+        // HE
+        ["לוח שנה"] = olFolderCalendar,
+
+        // --- Contacts ---
+        ["contacts"] = olFolderContacts,
+        // DE
+        ["kontakte"] = olFolderContacts,
+        // SV
+        ["kontakter"] = olFolderContacts,
+        // CS
+        ["kontakty"] = olFolderContacts,
+        // DA
+        ["kontaktpersoner"] = olFolderContacts,
+        // NO (same as SV)
+        // FI
+        ["yhteystiedot"] = olFolderContacts,
+        // NL
+        ["contactpersonen"] = olFolderContacts,
+        // FR (same as EN)
+        // ES
+        ["contactos"] = olFolderContacts,
+        // IT
+        ["contatti"] = olFolderContacts,
+        // PT-BR
+        ["contatos"] = olFolderContacts,
+        // PL (same as CS)
+        // HU
+        ["névjegyek"] = olFolderContacts,
+        ["nevjegyek"] = olFolderContacts,
+        // RO
+        ["persoane de contact"] = olFolderContacts,
+        // TR
+        ["kişiler"] = olFolderContacts,
+        ["kisiler"] = olFolderContacts,
+        // JA
+        ["連絡先"] = olFolderContacts,
+        // ZH
+        ["联系人"] = olFolderContacts,
+        // KO
+        ["연락처"] = olFolderContacts,
+        // RU
+        ["контакты"] = olFolderContacts,
+        // AR
+        ["جهات الاتصال"] = olFolderContacts,
+        // HE
+        ["אנשי קשר"] = olFolderContacts,
+    };
+
     public void Initialize()
     {
         var outlookType = Type.GetTypeFromProgID("Outlook.Application");
@@ -83,22 +478,9 @@ public class OutlookService : IOutlookService
             return folder;
         }
 
-        int? folderId = folderName.ToLowerInvariant() switch
+        if (FolderAliases.TryGetValue(folderName, out int folderId))
         {
-            "inbox" or "posteingang" => olFolderInbox,
-            "sent" or "sentmail" or "sent mail" or "sent items" or "gesendete elemente" => olFolderSentMail,
-            "drafts" or "entwürfe" => olFolderDrafts,
-            "deleted" or "deleteditems" or "deleted items" or "trash" or "gelöschte elemente" => olFolderDeletedItems,
-            "outbox" or "postausgang" => olFolderOutbox,
-            "junk" or "junkmail" or "junk mail" or "spam" or "junk-e-mail" => olFolderJunk,
-            "calendar" or "kalender" => olFolderCalendar,
-            "contacts" or "kontakte" => olFolderContacts,
-            _ => null
-        };
-
-        if (folderId.HasValue)
-        {
-            var folder = _namespace.GetDefaultFolder(folderId.Value);
+            var folder = _namespace.GetDefaultFolder(folderId);
             Track(folder);
             return folder;
         }
