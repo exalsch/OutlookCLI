@@ -162,7 +162,7 @@ The workflow will:
 - `.github/workflows/ci.yml` runs build + test on every push to `main` and on PRs
 
 ### Branching
-- `main` - stable releases, CI runs here
+- `master` - stable releases, CI runs here
 - `dev` - active development branch
 
 ## Output Format
