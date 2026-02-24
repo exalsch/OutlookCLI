@@ -16,21 +16,37 @@ public class ReplyMailCommand : Command
 
         var bodyOption = new Option<string>(
             ["--body", "-b"],
-            "Reply body text (plain text)")
+            "Reply body text (HTML by default)")
         { IsRequired = true };
 
         var replyAllOption = new Option<bool>(
             ["--reply-all", "-a"],
             "Reply to all recipients (To + CC) instead of just the sender");
 
+        var draftOption = new Option<bool>(
+            ["--draft", "-d"],
+            "Save as draft instead of sending immediately");
+
+        var htmlOption = new Option<bool>(
+            ["--html"],
+            () => true,
+            "Treat body as HTML (default: true). Use --html false for plain text");
+
+        var signatureFileOption = new Option<FileInfo?>(
+            ["--signature-file"],
+            "Append HTML signature from file. Extract one first with 'mail extract-signature'");
+
         AddArgument(entryIdArg);
         AddOption(bodyOption);
         AddOption(replyAllOption);
+        AddOption(draftOption);
+        AddOption(htmlOption);
+        AddOption(signatureFileOption);
 
-        this.SetHandler(Execute, entryIdArg, bodyOption, replyAllOption);
+        this.SetHandler(Execute, entryIdArg, bodyOption, replyAllOption, draftOption, htmlOption, signatureFileOption);
     }
 
-    private void Execute(string entryId, string body, bool replyAll)
+    private void Execute(string entryId, string body, bool replyAll, bool draft, bool isHtml, FileInfo? signatureFile)
     {
         var options = GlobalOptionsAccessor.Current;
         IOutputFormatter formatter = options.Human ? new HumanOutputFormatter() : new JsonOutputFormatter();
@@ -54,15 +70,38 @@ public class ReplyMailCommand : Command
                 return;
             }
 
-            service.ReplyToMail(entryId, body, replyAll);
+            // Append signature if provided
+            if (signatureFile != null)
+            {
+                if (!signatureFile.Exists)
+                {
+                    var errorResult = CommandResult<object>.Fail(
+                        "mail reply",
+                        "FILE_NOT_FOUND",
+                        $"Signature file not found: {signatureFile.FullName}"
+                    );
+                    Console.WriteLine(formatter.Format(errorResult));
+                    Environment.Exit(1);
+                    return;
+                }
+                var signature = File.ReadAllText(signatureFile.FullName);
+                body = body + signature;
+                isHtml = true;
+            }
+
+            var draftEntryId = service.ReplyToMail(entryId, body, replyAll, draft, isHtml);
 
             var result = CommandResult<object>.Ok(
                 "mail reply",
                 new
                 {
-                    message = replyAll ? "Reply to all sent successfully" : "Reply sent successfully",
+                    message = draft
+                        ? "Reply saved as draft"
+                        : replyAll ? "Reply to all sent successfully" : "Reply sent successfully",
                     originalSubject = originalMail.Subject,
-                    replyAll
+                    replyAll,
+                    draft,
+                    entryId = draft ? draftEntryId : (string?)null
                 },
                 new ResultMetadata()
             );

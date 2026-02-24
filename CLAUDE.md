@@ -66,6 +66,7 @@ Item class constants (for type checking):
 outlook mail folders                                    # List available mail folders
 outlook mail list [--folder <name>] [--unread] [--limit <n>] [--full]
 outlook mail read <entry-id>                            # Read specific email
+outlook mail open <entry-id>                            # Open email in Outlook GUI
 outlook mail search --query <text> [--from <email>] [--after <date>] [--before <date>] [--folder <name>]
 
 # Send and draft
@@ -73,8 +74,8 @@ outlook mail send --to <emails> [--cc <emails>] --subject <text> [--body <text>]
 outlook mail draft --to <emails> --subject <text> [--body <text>] [--html] [--signature-file <path>] [--attachment <files>]
 
 # Reply, forward, and conversation
-outlook mail reply <entry-id> --body <text> [--reply-all]
-outlook mail forward <entry-id> --to <emails> [--body <text>]
+outlook mail reply <entry-id> --body <text> [--reply-all] [--draft] [--html] [--signature-file <path>]
+outlook mail forward <entry-id> --to <emails> [--body <text>] [--draft] [--html] [--signature-file <path>]
 outlook mail conversation <entry-id> [--limit <n>]            # Get all emails in same thread
 
 # Organize
@@ -97,6 +98,7 @@ outlook mail extract-signature <entry-id> [--output <file>]
 ```bash
 outlook calendar list [--start <date>] [--end <date>] [--limit <n>] [--full]
 outlook calendar get <entry-id>
+outlook calendar open <entry-id>                        # Open event in Outlook GUI
 outlook calendar create --subject <text> --start <datetime> --end <datetime> [--location <text>] [--body <text>] [--all-day]
 outlook calendar update <entry-id> [--subject <text>] [--start <datetime>] [--end <datetime>] [--location <text>] [--body <text>]
 outlook calendar delete <entry-id> [--no-confirm]

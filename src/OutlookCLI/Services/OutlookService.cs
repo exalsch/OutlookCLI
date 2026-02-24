@@ -724,6 +724,22 @@ public class OutlookService : IOutlookService
         return null;
     }
 
+    public void OpenMail(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        int itemClass = item.Class;
+        if (itemClass != 43) // olMail
+        {
+            Marshal.ReleaseComObject(item);
+            throw new InvalidOperationException("Item is not a mail message");
+        }
+
+        item.Display();
+        // Do NOT release item - Outlook manages the displayed window
+    }
+
     public IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName)
     {
         var folder = GetFolder(folderName);
@@ -1264,7 +1280,7 @@ public class OutlookService : IOutlookService
         };
     }
 
-    public void ReplyToMail(string entryId, string body, bool replyAll)
+    public string ReplyToMail(string entryId, string body, bool replyAll, bool saveAsDraft = false, bool isHtml = true)
     {
         if (_namespace == null) throw new InvalidOperationException("Service not initialized");
 
@@ -1276,8 +1292,35 @@ public class OutlookService : IOutlookService
         {
             var reply = replyAll ? item.ReplyAll() : item.Reply();
             Track(reply);
-            reply.Body = body + "\n\n" + reply.Body;
-            reply.Send();
+            if (isHtml)
+            {
+                string existingHtml = reply.HTMLBody ?? "";
+                // Insert the new body after <body...> tag
+                var bodyTagMatch = System.Text.RegularExpressions.Regex.Match(existingHtml, @"<body[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (bodyTagMatch.Success)
+                {
+                    int insertPos = bodyTagMatch.Index + bodyTagMatch.Length;
+                    reply.HTMLBody = existingHtml.Insert(insertPos, $"<div>{body}</div><br>");
+                }
+                else
+                {
+                    reply.HTMLBody = $"<div>{body}</div><br>" + existingHtml;
+                }
+            }
+            else
+            {
+                reply.Body = body + "\n\n" + reply.Body;
+            }
+            if (saveAsDraft)
+            {
+                reply.Save();
+                return reply.EntryID;
+            }
+            else
+            {
+                reply.Send();
+                return string.Empty;
+            }
         }
         else
         {
@@ -1285,7 +1328,7 @@ public class OutlookService : IOutlookService
         }
     }
 
-    public void ForwardMail(string entryId, string[] to, string? body)
+    public string ForwardMail(string entryId, string[] to, string? body, bool saveAsDraft = false, bool isHtml = true)
     {
         if (_namespace == null) throw new InvalidOperationException("Service not initialized");
 
@@ -1299,8 +1342,36 @@ public class OutlookService : IOutlookService
             Track(forward);
             forward.To = string.Join(";", to);
             if (!string.IsNullOrEmpty(body))
-                forward.Body = body + "\n\n" + forward.Body;
-            forward.Send();
+            {
+                if (isHtml)
+                {
+                    string existingHtml = forward.HTMLBody ?? "";
+                    var bodyTagMatch = System.Text.RegularExpressions.Regex.Match(existingHtml, @"<body[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (bodyTagMatch.Success)
+                    {
+                        int insertPos = bodyTagMatch.Index + bodyTagMatch.Length;
+                        forward.HTMLBody = existingHtml.Insert(insertPos, $"<div>{body}</div><br>");
+                    }
+                    else
+                    {
+                        forward.HTMLBody = $"<div>{body}</div><br>" + existingHtml;
+                    }
+                }
+                else
+                {
+                    forward.Body = body + "\n\n" + forward.Body;
+                }
+            }
+            if (saveAsDraft)
+            {
+                forward.Save();
+                return forward.EntryID;
+            }
+            else
+            {
+                forward.Send();
+                return string.Empty;
+            }
         }
         else
         {
@@ -1500,6 +1571,22 @@ public class OutlookService : IOutlookService
         }
 
         return null;
+    }
+
+    public void OpenEvent(string entryId)
+    {
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var item = _namespace.GetItemFromID(entryId);
+        int itemClass = item.Class;
+        if (itemClass != 26) // olAppointment
+        {
+            Marshal.ReleaseComObject(item);
+            throw new InvalidOperationException("Item is not a calendar event");
+        }
+
+        item.Display();
+        // Do NOT release item - Outlook manages the displayed window
     }
 
     public string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay)

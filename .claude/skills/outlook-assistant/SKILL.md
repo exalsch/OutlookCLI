@@ -47,6 +47,9 @@ OutlookCLI mail read <entry-id>
 
 # Mark as read after processing
 OutlookCLI mail mark-read <entry-id>
+
+# Open email in Outlook desktop window
+OutlookCLI mail open <entry-id>
 ```
 
 **Important**: Parse the JSON output to extract `entryId` values. All IDs are opaque strings from Outlook.
@@ -89,8 +92,14 @@ OutlookCLI mail reply <entry-id> --body "Thanks for the update." --signature-fil
 # Reply to all recipients
 OutlookCLI mail reply <entry-id> --body "Noted, thanks." --reply-all --signature-file my-signature.html
 
+# Save reply as draft for user review (instead of sending immediately)
+OutlookCLI mail reply <entry-id> --body "Draft reply text" --draft --signature-file my-signature.html
+
 # Forward an email
 OutlookCLI mail forward <entry-id> --to colleague@example.com --body "FYI see below." --signature-file my-signature.html
+
+# Save forward as draft for user review
+OutlookCLI mail forward <entry-id> --to colleague@example.com --body "FYI" --draft --signature-file my-signature.html
 ```
 
 ### 5. Search Emails
@@ -126,6 +135,9 @@ OutlookCLI calendar create \
   --start "2024-01-15 09:00" \
   --end "2024-01-15 09:30" \
   --location "Teams"
+
+# Open event in Outlook desktop window
+OutlookCLI calendar open <entry-id>
 
 # Accept meeting
 OutlookCLI calendar respond <entry-id> --accept --message "See you there!"
@@ -201,7 +213,7 @@ Always check `success` field before processing `data`.
 
 1. **Always parse JSON output** - Default output is JSON. Use `--human` only when presenting email content directly to the user (e.g. `mail read --human`). For programmatic processing (extracting IDs, checking success), use JSON.
 2. **Use --no-confirm** for batch operations to avoid confirmation prompts blocking automation.
-3. **Prefer `reply` over `draft`** when responding to an existing thread — `reply` preserves conversation history and recipients. Only use `draft` for new standalone emails or when the user explicitly wants to review before any action.
+3. **Prefer `reply` over `draft`** when responding to an existing thread — `reply` preserves conversation history and recipients. Use `reply --draft` or `forward --draft` to save as draft for user review while preserving the thread. Only use `mail draft` for new standalone emails.
 4. **Include signature** on all outgoing emails (send, reply, forward, draft) using `--signature-file`. Extract one first if it doesn't exist (see Signature Setup above).
 5. **Mark as read** after processing an email so the user's inbox stays clean.
 6. **Entry IDs change** when emails are moved between folders. Re-fetch if needed.

@@ -39,6 +39,7 @@ class Program
         mailCommand.AddCommand(new FoldersCommand());
         mailCommand.AddCommand(new ListMailCommand());
         mailCommand.AddCommand(new ReadMailCommand());
+        mailCommand.AddCommand(new OpenMailCommand());
         mailCommand.AddCommand(new SearchMailCommand());
         mailCommand.AddCommand(new SendMailCommand());
         mailCommand.AddCommand(new DraftCommand());
@@ -58,6 +59,7 @@ class Program
         var calendarCommand = new Command("calendar", "Calendar operations (list, get, create, update, delete, respond to meetings)");
         calendarCommand.AddCommand(new ListEventsCommand());
         calendarCommand.AddCommand(new GetEventCommand());
+        calendarCommand.AddCommand(new OpenEventCommand());
         calendarCommand.AddCommand(new CreateEventCommand());
         calendarCommand.AddCommand(new UpdateEventCommand());
         calendarCommand.AddCommand(new DeleteEventCommand());
