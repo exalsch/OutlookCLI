@@ -85,12 +85,14 @@ OutlookCLI mail draft \
 
 **Always prefer `mail reply` over `mail draft`** when responding to an existing email thread. `reply` preserves the conversation thread, original recipients, and quoted history. Only use `draft` for composing new standalone emails that need user review.
 
-```bash
-# Reply to an email (preserves thread + includes signature)
-OutlookCLI mail reply <entry-id> --body "Thanks for the update." --signature-file my-signature.html
+**Always use `--reply-all`** unless the user explicitly asks to reply only to the sender. Reply-all ensures all participants stay in the loop.
 
-# Reply to all recipients
+```bash
+# Reply to all recipients (default — always prefer this)
 OutlookCLI mail reply <entry-id> --body "Noted, thanks." --reply-all --signature-file my-signature.html
+
+# Reply to sender only (only when user explicitly requests it)
+OutlookCLI mail reply <entry-id> --body "Thanks for the update." --signature-file my-signature.html
 
 # Save reply as draft for user review (instead of sending immediately)
 OutlookCLI mail reply <entry-id> --body "Draft reply text" --draft --signature-file my-signature.html
@@ -213,7 +215,7 @@ Always check `success` field before processing `data`.
 
 1. **Always parse JSON output** - Default output is JSON. Use `--human` only when presenting email content directly to the user (e.g. `mail read --human`). For programmatic processing (extracting IDs, checking success), use JSON.
 2. **Use --no-confirm** for batch operations to avoid confirmation prompts blocking automation.
-3. **Prefer `reply` over `draft`** when responding to an existing thread — `reply` preserves conversation history and recipients. Use `reply --draft` or `forward --draft` to save as draft for user review while preserving the thread. Only use `mail draft` for new standalone emails.
+3. **Prefer `reply --reply-all` over `reply`** — always reply-all unless the user explicitly asks to reply only to the sender. Prefer `reply` over `draft` when responding to an existing thread. Use `reply --draft` or `forward --draft` to save as draft for user review. Only use `mail draft` for new standalone emails.
 4. **Include signature** on all outgoing emails (send, reply, forward, draft) using `--signature-file`. Extract one first if it doesn't exist (see Signature Setup above).
 5. **Mark as read** after processing an email so the user's inbox stays clean.
 6. **Entry IDs change** when emails are moved between folders. Re-fetch if needed.
