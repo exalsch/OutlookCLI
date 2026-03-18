@@ -1472,18 +1472,25 @@ public class OutlookService : IOutlookService
 
         var result = new List<CalendarEventSummary>();
         int count = 0;
-        int totalItems = items.Count;
-
-        for (int i = 1; i <= totalItems && count < limit; i++)
+        dynamic? item = null;
+        try
         {
-            dynamic? item = null;
+            item = items.GetFirst();
+        }
+        catch
+        {
+            item = null;
+        }
+
+        while (item != null && count < limit)
+        {
+            dynamic currentItem = item!;
             try
             {
-                item = items[i];
-                int itemClass = item.Class;
+                int itemClass = currentItem.Class;
                 if (itemClass == 26) // olAppointment
                 {
-                    result.Add(MapEventToSummary(item));
+                    result.Add(MapEventToSummary(currentItem));
                     count++;
                 }
             }
@@ -1493,7 +1500,21 @@ public class OutlookService : IOutlookService
             }
             finally
             {
-                Release(item);
+                Release(currentItem);
+            }
+
+            if (count >= limit)
+            {
+                break;
+            }
+
+            try
+            {
+                item = items.GetNext();
+            }
+            catch
+            {
+                item = null;
             }
         }
 
@@ -1522,18 +1543,25 @@ public class OutlookService : IOutlookService
 
         var result = new List<CalendarEvent>();
         int count = 0;
-        int totalItems = items.Count;
-
-        for (int i = 1; i <= totalItems && count < limit; i++)
+        dynamic? item = null;
+        try
         {
-            dynamic? item = null;
+            item = items.GetFirst();
+        }
+        catch
+        {
+            item = null;
+        }
+
+        while (item != null && count < limit)
+        {
+            dynamic currentItem = item!;
             try
             {
-                item = items[i];
-                int itemClass = item.Class;
+                int itemClass = currentItem.Class;
                 if (itemClass == 26) // olAppointment
                 {
-                    result.Add(MapEventToFull(item));
+                    result.Add(MapEventToFull(currentItem));
                     count++;
                 }
             }
@@ -1543,7 +1571,21 @@ public class OutlookService : IOutlookService
             }
             finally
             {
-                Release(item);
+                Release(currentItem);
+            }
+
+            if (count >= limit)
+            {
+                break;
+            }
+
+            try
+            {
+                item = items.GetNext();
+            }
+            catch
+            {
+                item = null;
             }
         }
 

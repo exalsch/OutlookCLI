@@ -31,3 +31,5 @@ attachments/
 # Misc
 *.log
 *.tmp
+nul
+.history/
