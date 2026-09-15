@@ -985,8 +985,32 @@ public class OutlookService : IOutlookService
             }
         }
 
+        ResolveRecipients(mail);
         mail.Save(); // Save as draft, don't send
         return mail.EntryID;
+    }
+
+    /// <summary>
+    /// Resolves To/CC against the address book before a draft is saved. Without this Outlook
+    /// stores only the typed text with no address. New Outlook and OWA then cannot send the draft.
+    /// </summary>
+    private void ResolveRecipients(dynamic mail)
+    {
+        var recipients = mail.Recipients;
+        Track(recipients);
+        if ((bool)recipients.ResolveAll())
+            return;
+
+        var unresolved = new List<string>();
+        int count = recipients.Count;
+        for (int i = 1; i <= count; i++)
+        {
+            var recipient = recipients.Item(i);
+            Track(recipient);
+            if (!(bool)recipient.Resolved)
+                unresolved.Add((string)recipient.Name);
+        }
+        throw new InvalidOperationException($"Could not resolve recipient(s): {string.Join(", ", unresolved)}");
     }
 
     public bool MarkAsRead(string entryId, bool read)
@@ -1364,6 +1388,7 @@ public class OutlookService : IOutlookService
             }
             if (saveAsDraft)
             {
+                ResolveRecipients(forward);
                 forward.Save();
                 return forward.EntryID;
             }
