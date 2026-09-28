@@ -139,7 +139,12 @@ OutlookCLI calendar create \
   --location "Teams"
 
 # Meeting invite as a draft: saved with attendees, NEVER sent. The human opens it and presses Send.
-OutlookCLI calendar create   --subject "Service Rates"   --start "2024-01-15 11:00"   --end "2024-01-15 11:30"   --body "Agenda"   --attendees a@x.com,b@x.com --optional c@x.com
+OutlookCLI calendar create \
+  --subject "Service Rates" \
+  --start "2024-01-15 11:00" \
+  --end "2024-01-15 11:30" \
+  --body "Agenda" \
+  --attendees a@x.com,b@x.com --optional c@x.com
 
 # Open event in Outlook desktop window
 OutlookCLI calendar open <entry-id>
