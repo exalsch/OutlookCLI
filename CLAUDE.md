@@ -99,7 +99,7 @@ outlook mail extract-signature <entry-id> [--output <file>]
 outlook calendar list [--start <date>] [--end <date>] [--limit <n>] [--full]
 outlook calendar get <entry-id>
 outlook calendar open <entry-id>                        # Open event in Outlook GUI
-outlook calendar create --subject <text> --start <datetime> --end <datetime> [--location <text>] [--body <text>] [--all-day]
+outlook calendar create --subject <text> --start <datetime> --end <datetime> [--location <text>] [--body <text>] [--all-day] [--attendees <emails>] [--optional <emails>]
 outlook calendar update <entry-id> [--subject <text>] [--start <datetime>] [--end <datetime>] [--location <text>] [--body <text>]
 outlook calendar delete <entry-id> [--no-confirm]
 outlook calendar respond <entry-id> --accept|--decline|--tentative [--message <text>]
@@ -133,6 +133,15 @@ outlook mail send --to user@example.com --subject "Hello" --body "<p>Message</p>
 ```bash
 outlook mail draft --to user@example.com --subject "Review needed" --body "Draft content" --attachment report.pdf
 ```
+
+### Prepare a meeting invite for human review
+```bash
+outlook calendar create --subject "Service Rates" --start "2026-10-09 11:00" --end "2026-10-09 11:30" --body "Agenda" --attendees a@x.com,b@x.com --optional c@x.com
+```
+With `--attendees` or `--optional` the event is saved as a meeting but **never sent**. Recipients are
+resolved first (an unresolvable name fails with `OUTLOOK_ERROR` and nothing is saved), and the item is
+flagged unsent (`PidLidAppointmentStateFlags` = asfMeeting | asfUnsent). The human opens it in Outlook and
+presses Send. There is no Teams link: the Teams add-in is not scriptable over COM, so add it in Outlook.
 
 ### Accept meeting invitation
 ```bash

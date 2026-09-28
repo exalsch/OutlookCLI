@@ -32,6 +32,17 @@ public class OutlookService : IOutlookService
     private const int olTo = 1;
     private const int olCC = 2;
 
+    // OlMeetingStatus / OlMeetingRecipientType enum values
+    private const int olMeeting = 1;
+    private const int olRequired = 1;
+    private const int olOptional = 2;
+
+    // PidLidAppointmentStateFlags (MS-OXOCAL 2.2.1.10)
+    private const string PidLidAppointmentStateFlags =
+        "http://schemas.microsoft.com/mapi/id/{00062002-0000-0000-C000-000000000046}/82170003";
+    private const int asfMeeting = 0x1;
+    private const int asfUnsent = 0x4;
+
     /// <summary>
     /// Maps localized folder names to OlDefaultFolders constants.
     /// Keys are lowercase. Covers: EN, DE, SV, CS, DA, NO, FI, NL, FR, ES, IT,
@@ -1656,7 +1667,8 @@ public class OutlookService : IOutlookService
         // Do NOT release item - Outlook manages the displayed window
     }
 
-    public string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay)
+    public string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay,
+        string[]? requiredAttendees = null, string[]? optionalAttendees = null)
     {
         if (_app == null) throw new InvalidOperationException("Service not initialized");
 
@@ -1673,7 +1685,36 @@ public class OutlookService : IOutlookService
         if (!string.IsNullOrEmpty(body))
             apt.Body = body;
 
-        apt.Save();
+        var hasAttendees = (requiredAttendees?.Length ?? 0) + (optionalAttendees?.Length ?? 0) > 0;
+        if (hasAttendees)
+        {
+            // A meeting that is saved but never sent: Outlook keeps it in the calendar with
+            // "invitations have not been sent", and the human sends it from there.
+            apt.MeetingStatus = olMeeting;
+            var recipients = apt.Recipients;
+            Track(recipients);
+            foreach (var address in requiredAttendees ?? [])
+            {
+                var recipient = recipients.Add(address);
+                Track(recipient);
+                recipient.Type = olRequired;
+            }
+            foreach (var address in optionalAttendees ?? [])
+            {
+                var recipient = recipients.Add(address);
+                Track(recipient);
+                recipient.Type = olOptional;
+            }
+            ResolveRecipients(apt);
+
+            // Mark it unsent (MS-OXOCAL asfMeeting | asfUnsent). Classic Outlook infers this, but
+            // without the flag new Outlook and Graph show the saved meeting as if it had been sent.
+            var accessor = apt.PropertyAccessor;
+            Track(accessor);
+            accessor.SetProperty(PidLidAppointmentStateFlags, asfMeeting | asfUnsent);
+        }
+
+        apt.Save(); // Never Send(): with attendees this is an unsent meeting draft
         return apt.EntryID;
     }
 

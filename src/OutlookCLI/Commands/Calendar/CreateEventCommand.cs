@@ -8,7 +8,7 @@ namespace OutlookCLI.Commands.Calendar;
 
 public class CreateEventCommand : Command
 {
-    public CreateEventCommand() : base("create", "Create a new calendar event. Returns the entryId of the created event. End must be after start.")
+    public CreateEventCommand() : base("create", "Create a new calendar event. Returns the entryId of the created event. End must be after start. With --attendees it becomes a meeting that is saved but NOT sent: the invitations go out only when a human opens it in Outlook and presses Send.")
     {
         var subjectOption = new Option<string>(
             ["--subject", "-s"],
@@ -37,18 +37,43 @@ public class CreateEventCommand : Command
             ["--all-day"],
             "Create as an all-day event (only date part of --start/--end is used)");
 
+        var attendeesOption = new Option<string[]?>(
+            ["--attendees"],
+            "Required attendees (email addresses). Space-, comma- or semicolon-separated. Makes the event an unsent meeting draft")
+        { AllowMultipleArgumentsPerToken = true };
+
+        var optionalOption = new Option<string[]?>(
+            ["--optional"],
+            "Optional attendees (email addresses). Space-, comma- or semicolon-separated. Makes the event an unsent meeting draft")
+        { AllowMultipleArgumentsPerToken = true };
+
         AddOption(subjectOption);
         AddOption(startOption);
         AddOption(endOption);
         AddOption(locationOption);
         AddOption(bodyOption);
         AddOption(allDayOption);
+        AddOption(attendeesOption);
+        AddOption(optionalOption);
 
-        this.SetHandler(Execute, subjectOption, startOption, endOption, locationOption, bodyOption, allDayOption);
+        this.SetHandler(Execute, subjectOption, startOption, endOption, locationOption, bodyOption, allDayOption, attendeesOption, optionalOption);
     }
 
-    private void Execute(string subject, DateTime start, DateTime end, string? location, string? body, bool allDay)
+    /// <summary>
+    /// Flattens "--attendees a@x.com,b@x.com c@x.com" into single addresses.
+    /// </summary>
+    public static string[] SplitAddresses(string[]? values) =>
+        (values ?? [])
+            .SelectMany(v => v.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToArray();
+
+    private void Execute(string subject, DateTime start, DateTime end, string? location, string? body, bool allDay,
+        string[]? attendees, string[]? optional)
     {
+        var required = SplitAddresses(attendees);
+        var optionalAttendees = SplitAddresses(optional);
+        var isMeeting = required.Length + optionalAttendees.Length > 0;
+
         var options = GlobalOptionsAccessor.Current;
         IOutputFormatter formatter = options.Human ? new HumanOutputFormatter() : new JsonOutputFormatter();
 
@@ -68,19 +93,25 @@ public class CreateEventCommand : Command
         try
         {
             service.Initialize();
-            var entryId = service.CreateEvent(subject, start, end, location, body, allDay);
+            var entryId = service.CreateEvent(subject, start, end, location, body, allDay, required, optionalAttendees);
 
             var result = CommandResult<object>.Ok(
                 "calendar create",
                 new
                 {
-                    message = "Event created successfully",
+                    message = isMeeting
+                        ? "Meeting saved as draft. Invitations have NOT been sent; open it in Outlook and press Send"
+                        : "Event created successfully",
                     entryId,
                     subject,
                     start,
                     end,
                     location,
-                    isAllDay = allDay
+                    isAllDay = allDay,
+                    isMeeting,
+                    invitationsSent = false,
+                    requiredAttendees = required,
+                    optionalAttendees
                 },
                 new ResultMetadata()
             );

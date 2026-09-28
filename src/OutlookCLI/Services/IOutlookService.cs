@@ -33,7 +33,8 @@ public interface IOutlookService : IDisposable
     IEnumerable<CalendarEvent> GetEventListFull(DateTime? start, DateTime? end, int limit);
     CalendarEvent? GetEvent(string entryId);
     void OpenEvent(string entryId);
-    string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay);
+    string CreateEvent(string subject, DateTime start, DateTime end, string? location, string? body, bool isAllDay,
+        string[]? requiredAttendees = null, string[]? optionalAttendees = null);
     void UpdateEvent(string entryId, string? subject, DateTime? start, DateTime? end, string? location, string? body);
     bool DeleteEvent(string entryId);
     bool RespondToMeeting(string entryId, string responseType, string? message);
