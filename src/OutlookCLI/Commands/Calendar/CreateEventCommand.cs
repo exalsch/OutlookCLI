@@ -8,7 +8,7 @@ namespace OutlookCLI.Commands.Calendar;
 
 public class CreateEventCommand : Command
 {
-    public CreateEventCommand() : base("create", "Create a new calendar event. Returns the entryId of the created event. End must be after start. With --attendees it becomes a meeting that is saved but NOT sent: the invitations go out only when a human opens it in Outlook and presses Send.")
+    public CreateEventCommand() : base("create", "Create a new calendar event. Returns the entryId of the created event. End must be after start. With --attendees/--optional it is a PLACEHOLDER: a plain appointment whose body lists the invitees. Nothing is ever sent; a human adds the attendees in Outlook and presses Send.")
     {
         var subjectOption = new Option<string>(
             ["--subject", "-s"],
@@ -39,12 +39,12 @@ public class CreateEventCommand : Command
 
         var attendeesOption = new Option<string[]?>(
             ["--attendees"],
-            "Required attendees (email addresses). Space-, comma- or semicolon-separated. Makes the event an unsent meeting draft")
+            "Required attendees (email addresses). Space-, comma- or semicolon-separated. Resolved against the address book and listed in the body, never added as recipients")
         { AllowMultipleArgumentsPerToken = true };
 
         var optionalOption = new Option<string[]?>(
             ["--optional"],
-            "Optional attendees (email addresses). Space-, comma- or semicolon-separated. Makes the event an unsent meeting draft")
+            "Optional attendees (email addresses). Space-, comma- or semicolon-separated. Resolved against the address book and listed in the body, never added as recipients")
         { AllowMultipleArgumentsPerToken = true };
 
         AddOption(subjectOption);
@@ -72,7 +72,7 @@ public class CreateEventCommand : Command
     {
         var required = SplitAddresses(attendees);
         var optionalAttendees = SplitAddresses(optional);
-        var isMeeting = required.Length + optionalAttendees.Length > 0;
+        var isPlaceholder = required.Length + optionalAttendees.Length > 0;
 
         var options = GlobalOptionsAccessor.Current;
         IOutputFormatter formatter = options.Human ? new HumanOutputFormatter() : new JsonOutputFormatter();
@@ -99,8 +99,8 @@ public class CreateEventCommand : Command
                 "calendar create",
                 new
                 {
-                    message = isMeeting
-                        ? "Meeting saved as draft. Invitations have NOT been sent; open it in Outlook and press Send"
+                    message = isPlaceholder
+                        ? "Placeholder created. Nothing was sent: add the attendees listed in the body in Outlook, then press Send"
                         : "Event created successfully",
                     entryId,
                     subject,
@@ -108,7 +108,7 @@ public class CreateEventCommand : Command
                     end,
                     location,
                     isAllDay = allDay,
-                    isMeeting,
+                    isPlaceholder,
                     invitationsSent = false,
                     requiredAttendees = required,
                     optionalAttendees

@@ -138,10 +138,15 @@ outlook mail draft --to user@example.com --subject "Review needed" --body "Draft
 ```bash
 outlook calendar create --subject "Service Rates" --start "2026-10-09 11:00" --end "2026-10-09 11:30" --body "Agenda" --attendees a@x.com,b@x.com --optional c@x.com
 ```
-With `--attendees` or `--optional` the event is saved as a meeting but **never sent**. Recipients are
-resolved first (an unresolvable name fails with `OUTLOOK_ERROR` and nothing is saved), and the item is
-flagged unsent (`PidLidAppointmentStateFlags` = asfMeeting | asfUnsent). The human opens it in Outlook and
-presses Send. There is no Teams link: the Teams add-in is not scriptable over COM, so add it in Outlook.
+With `--attendees` or `--optional` the event is a **placeholder**: a plain appointment (no recipients)
+whose body starts with a `PLACEHOLDER` line and the invitees as `Name <address>`. Nothing is ever sent.
+Each address is resolved against the address book first; an unresolvable one fails with `OUTLOOK_ERROR`
+and nothing is saved. The human opens it, adds the attendees (and a Teams link) and presses Send.
+
+Why not a real unsent meeting: saving one over COM works in classic Outlook, but **new Outlook shows it
+as an already-sent meeting with no Send button**, so an invite that never went out looks sent. Neither
+`PidLidAppointmentStateFlags` asfUnsent nor `MSGFLAG_UNSENT` changes that (Exchange strips the latter
+from calendar items). Tested 28.09.2026; do not reintroduce recipients here without re-testing in new Outlook.
 
 ### Accept meeting invitation
 ```bash

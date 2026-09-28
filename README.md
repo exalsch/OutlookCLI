@@ -78,7 +78,7 @@ outlook mail extract-signature <entry-id> --output signature.html
 ```bash
 outlook calendar list [--start 2024-01-01] [--end 2024-02-01] [--limit 50]
 outlook calendar get <entry-id>
-outlook calendar create --subject "Meeting" --start "2024-01-15 09:00" --end "2024-01-15 10:00" [--location "Room A"] [--attendees a@x.com b@x.com] [--optional c@x.com]   # with attendees: saved as an unsent meeting, never sent
+outlook calendar create --subject "Meeting" --start "2024-01-15 09:00" --end "2024-01-15 10:00" [--location "Room A"] [--attendees a@x.com b@x.com] [--optional c@x.com]   # with attendees: placeholder appointment listing them in the body, nothing is sent
 outlook calendar update <entry-id> --subject "Updated Meeting"
 outlook calendar delete <entry-id> [--no-confirm]
 outlook calendar respond <entry-id> --accept [--message "See you there!"]

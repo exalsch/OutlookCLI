@@ -32,17 +32,6 @@ public class OutlookService : IOutlookService
     private const int olTo = 1;
     private const int olCC = 2;
 
-    // OlMeetingStatus / OlMeetingRecipientType enum values
-    private const int olMeeting = 1;
-    private const int olRequired = 1;
-    private const int olOptional = 2;
-
-    // PidLidAppointmentStateFlags (MS-OXOCAL 2.2.1.10)
-    private const string PidLidAppointmentStateFlags =
-        "http://schemas.microsoft.com/mapi/id/{00062002-0000-0000-C000-000000000046}/82170003";
-    private const int asfMeeting = 0x1;
-    private const int asfUnsent = 0x4;
-
     /// <summary>
     /// Maps localized folder names to OlDefaultFolders constants.
     /// Keys are lowercase. Covers: EN, DE, SV, CS, DA, NO, FI, NL, FR, ES, IT,
@@ -1024,6 +1013,48 @@ public class OutlookService : IOutlookService
         throw new InvalidOperationException($"Could not resolve recipient(s): {string.Join(", ", unresolved)}");
     }
 
+    /// <summary>
+    /// Resolves each invitee against the address book (to catch typos) and renders the
+    /// "Invite" lines for a placeholder appointment. Returns null when there are none.
+    /// </summary>
+    private string? DescribeInvitees(string[]? requiredAttendees, string[]? optionalAttendees)
+    {
+        if ((requiredAttendees?.Length ?? 0) + (optionalAttendees?.Length ?? 0) == 0)
+            return null;
+        if (_namespace == null) throw new InvalidOperationException("Service not initialized");
+
+        var unresolved = new List<string>();
+        List<string> Resolve(string[]? addresses)
+        {
+            var lines = new List<string>();
+            foreach (var address in addresses ?? [])
+            {
+                var recipient = _namespace.CreateRecipient(address);
+                Track(recipient);
+                if (!(bool)recipient.Resolve())
+                {
+                    unresolved.Add(address);
+                    continue;
+                }
+                var name = (string)recipient.Name;
+                lines.Add(string.Equals(name, address, StringComparison.OrdinalIgnoreCase) ? address : $"{name} <{address}>");
+            }
+            return lines;
+        }
+
+        var required = Resolve(requiredAttendees);
+        var optional = Resolve(optionalAttendees);
+        if (unresolved.Count > 0)
+            throw new InvalidOperationException($"Could not resolve recipient(s): {string.Join(", ", unresolved)}");
+
+        var text = "PLACEHOLDER - invitations not sent. Add these attendees in Outlook, then Send.";
+        if (required.Count > 0)
+            text += "\nRequired: " + string.Join("; ", required);
+        if (optional.Count > 0)
+            text += "\nOptional: " + string.Join("; ", optional);
+        return text;
+    }
+
     public bool MarkAsRead(string entryId, bool read)
     {
         if (_namespace == null) throw new InvalidOperationException("Service not initialized");
@@ -1682,39 +1713,16 @@ public class OutlookService : IOutlookService
 
         if (!string.IsNullOrEmpty(location))
             apt.Location = location;
-        if (!string.IsNullOrEmpty(body))
-            apt.Body = body;
 
-        var hasAttendees = (requiredAttendees?.Length ?? 0) + (optionalAttendees?.Length ?? 0) > 0;
-        if (hasAttendees)
-        {
-            // A meeting that is saved but never sent: Outlook keeps it in the calendar with
-            // "invitations have not been sent", and the human sends it from there.
-            apt.MeetingStatus = olMeeting;
-            var recipients = apt.Recipients;
-            Track(recipients);
-            foreach (var address in requiredAttendees ?? [])
-            {
-                var recipient = recipients.Add(address);
-                Track(recipient);
-                recipient.Type = olRequired;
-            }
-            foreach (var address in optionalAttendees ?? [])
-            {
-                var recipient = recipients.Add(address);
-                Track(recipient);
-                recipient.Type = olOptional;
-            }
-            ResolveRecipients(apt);
+        var invitees = DescribeInvitees(requiredAttendees, optionalAttendees);
+        var fullBody = invitees == null ? body : invitees + (string.IsNullOrEmpty(body) ? "" : "\n\n" + body);
+        if (!string.IsNullOrEmpty(fullBody))
+            apt.Body = fullBody;
 
-            // Mark it unsent (MS-OXOCAL asfMeeting | asfUnsent). Classic Outlook infers this, but
-            // without the flag new Outlook and Graph show the saved meeting as if it had been sent.
-            var accessor = apt.PropertyAccessor;
-            Track(accessor);
-            accessor.SetProperty(PidLidAppointmentStateFlags, asfMeeting | asfUnsent);
-        }
-
-        apt.Save(); // Never Send(): with attendees this is an unsent meeting draft
+        // Never a meeting: attendees only go into the body. New Outlook shows a meeting saved over COM
+        // as already sent (no Send button), and Graph sends on create, so a placeholder is the only
+        // way to hand an invite to a human without anything leaving. The human adds the attendees.
+        apt.Save();
         return apt.EntryID;
     }
 

@@ -138,7 +138,8 @@ OutlookCLI calendar create \
   --end "2024-01-15 09:30" \
   --location "Teams"
 
-# Meeting invite as a draft: saved with attendees, NEVER sent. The human opens it and presses Send.
+# Meeting invite for human review: placeholder appointment, invitees listed in the body, NOTHING is sent.
+# The human adds the attendees (and Teams) in Outlook and presses Send.
 OutlookCLI calendar create \
   --subject "Service Rates" \
   --start "2024-01-15 11:00" \
