@@ -16,5 +16,11 @@ public record MailMessage(
     List<string> Cc,
     List<Attachment> Attachments,
     List<string> Categories,
-    string? ConversationTopic = null
+    string? ConversationTopic = null,
+    bool IsFlagged = false,
+    string FlagStatus = "none",
+    string? FlagRequest = null,
+    DateTime? FlagDueDate = null,
+    DateTime? FlagStartDate = null,
+    DateTime? FlagCompletedDate = null
 );

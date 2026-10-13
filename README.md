@@ -46,9 +46,9 @@ Global Options:
 ```bash
 # Browse
 outlook mail folders                              # List folder names and unread counts
-outlook mail list [--folder Inbox] [--unread] [--limit 20]
+outlook mail list [--folder Inbox] [--unread] [--flagged] [--flag-status none|flagged|complete] [--limit 20]
 outlook mail read <entry-id>                      # Full email with body
-outlook mail search --query "text" [--from user@example.com] [--after 2024-01-01]
+outlook mail search --query "text" [--from user@example.com] [--after 2024-01-01] [--flagged]
 
 # Compose
 outlook mail send --to a@x.com --subject "Hi" --body "Hello" [--html] [--signature-file sig.html]
@@ -101,6 +101,16 @@ All commands return a consistent JSON structure:
 }
 ```
 
+Mail items (`mail list`, `mail search`, `mail read`, `mail conversation`) include follow-up flag fields:
+
+| Field | Description |
+|-------|-------------|
+| `isFlagged` | `true` when the message is flagged for follow-up and not yet completed |
+| `flagStatus` | `none`, `flagged`, or `complete` |
+| `flagRequest` | Flag text, e.g. `Follow up` (omitted when empty) |
+| `flagDueDate` / `flagStartDate` | Follow-up due/start dates (omitted when not set) |
+| `flagCompletedDate` | When the flag was marked complete (omitted when not set) |
+
 On error:
 
 ```json
@@ -124,6 +134,15 @@ On error:
 outlook mail list --unread --limit 10
 outlook mail read <entry-id>
 outlook mail mark-read <entry-id>
+```
+
+### Find emails flagged for follow-up
+
+```bash
+# Only flagged (not completed) messages, filtered in Outlook via Items.Restrict
+outlook mail list --flagged --limit 50
+outlook mail search --flagged --after 2024-01-01
+outlook mail list --flag-status complete --folder Archive
 ```
 
 ### Send email with corporate signature

@@ -64,10 +64,10 @@ Item class constants (for type checking):
 ```bash
 # List and read
 outlook mail folders                                    # List available mail folders
-outlook mail list [--folder <name>] [--unread] [--limit <n>] [--full]
+outlook mail list [--folder <name>] [--unread] [--flagged] [--flag-status <none|flagged|complete>] [--limit <n>] [--full]
 outlook mail read <entry-id>                            # Read specific email
 outlook mail open <entry-id>                            # Open email in Outlook GUI
-outlook mail search --query <text> [--from <email>] [--after <date>] [--before <date>] [--folder <name>]
+outlook mail search --query <text> [--from <email>] [--after <date>] [--before <date>] [--folder <name>] [--flagged] [--flag-status <status>]
 
 # Send and draft
 outlook mail send --to <emails> [--cc <emails>] --subject <text> [--body <text>] [--body-file <path>] [--html] [--signature-file <path>] [--attachment <files>]
@@ -193,6 +193,11 @@ All commands return consistent JSON structure:
   }
 }
 ```
+
+Mail items include follow-up flag fields: `isFlagged`, `flagStatus` (`none`/`flagged`/`complete`), `flagRequest`, `flagDueDate`, `flagStartDate`, `flagCompletedDate` (null fields are omitted).
+Flags are read-only: there is no command that sets or clears flags.
+
+Flag filtering gotcha: on Exchange cached-mode stores `Items.Restrict("[FlagStatus] = 2")` (and the DASL equivalent on `0x10900003`) returns nothing even when flagged items exist; `[FlagStatus] >= 2` works. See `Services/MailFlags.cs`.
 
 ### Human Output (--human flag)
 Human-readable formatted output for terminal use.

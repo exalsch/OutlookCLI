@@ -608,19 +608,35 @@ public class OutlookService : IOutlookService
         Release(subfolders);
     }
 
-    public IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit)
+    /// <summary>
+    /// Returns the folder's items restricted by unread/flag filters, sorted newest first.
+    /// Filters are applied as chained Restrict calls so Jet and DASL filters never mix.
+    /// </summary>
+    private dynamic GetFilteredMailItems(dynamic folder, bool unreadOnly, MailFlagStatus? flagStatus)
     {
-        var folder = GetFolder(folderName);
         var items = folder.Items;
         Track(items);
-
-        items.Sort("[ReceivedTime]", true);
 
         if (unreadOnly)
         {
             items = items.Restrict("[UnRead] = True");
             Track(items);
         }
+
+        if (flagStatus.HasValue)
+        {
+            items = items.Restrict(MailFlags.GetRestrictFilter(flagStatus.Value));
+            Track(items);
+        }
+
+        items.Sort("[ReceivedTime]", true);
+        return items;
+    }
+
+    public IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit, MailFlagStatus? flagStatus = null)
+    {
+        var folder = GetFolder(folderName);
+        var items = GetFilteredMailItems(folder, unreadOnly, flagStatus);
 
         var result = new List<MailMessageSummary>();
         int count = 0;
@@ -636,7 +652,10 @@ public class OutlookService : IOutlookService
                 int itemClass = item.Class;
                 if (itemClass == 43) // olMail
                 {
-                    result.Add(MapToSummary(item, folderNameStr));
+                    MailFlagInfo flag = ReadFlag(item);
+                    // Double-check the server-side restriction on the client
+                    if (flagStatus.HasValue && flag.Status != flagStatus.Value) continue;
+                    result.Add(MapToSummary(item, folderNameStr, flag));
                     count++;
                 }
             }
@@ -653,19 +672,10 @@ public class OutlookService : IOutlookService
         return result;
     }
 
-    public IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit)
+    public IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit, MailFlagStatus? flagStatus = null)
     {
         var folder = GetFolder(folderName);
-        var items = folder.Items;
-        Track(items);
-
-        items.Sort("[ReceivedTime]", true);
-
-        if (unreadOnly)
-        {
-            items = items.Restrict("[UnRead] = True");
-            Track(items);
-        }
+        var items = GetFilteredMailItems(folder, unreadOnly, flagStatus);
 
         var result = new List<MailMessage>();
         int count = 0;
@@ -681,7 +691,10 @@ public class OutlookService : IOutlookService
                 int itemClass = item.Class;
                 if (itemClass == 43) // olMail
                 {
-                    result.Add(MapToFull(item, folderNameStr));
+                    MailFlagInfo flag = ReadFlag(item);
+                    // Double-check the server-side restriction on the client
+                    if (flagStatus.HasValue && flag.Status != flagStatus.Value) continue;
+                    result.Add(MapToFull(item, folderNameStr, flag));
                     count++;
                 }
             }
@@ -740,7 +753,7 @@ public class OutlookService : IOutlookService
         // Do NOT release item - Outlook manages the displayed window
     }
 
-    public IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName)
+    public IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName, MailFlagStatus? flagStatus = null)
     {
         var folder = GetFolder(folderName);
         var items = folder.Items;
@@ -775,6 +788,13 @@ public class OutlookService : IOutlookService
             Track(items);
         }
 
+        if (flagStatus.HasValue)
+        {
+            // Separate Restrict call: the flag filter is Jet syntax and must not be mixed with @SQL conditions
+            items = items.Restrict(MailFlags.GetRestrictFilter(flagStatus.Value));
+            Track(items);
+        }
+
         items.Sort("[ReceivedTime]", true);
 
         var result = new List<MailMessageSummary>();
@@ -790,7 +810,9 @@ public class OutlookService : IOutlookService
                 int itemClass = item.Class;
                 if (itemClass == 43)
                 {
-                    result.Add(MapToSummary(item, folderNameStr));
+                    MailFlagInfo flag = ReadFlag(item);
+                    if (flagStatus.HasValue && flag.Status != flagStatus.Value) continue;
+                    result.Add(MapToSummary(item, folderNameStr, flag));
                 }
             }
             catch
@@ -1871,7 +1893,48 @@ public class OutlookService : IOutlookService
         return categories.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
 
-    private MailMessageSummary MapToSummary(dynamic mail, string folderName)
+    /// <summary>
+    /// Reads follow-up flag properties defensively. Items that don't expose them
+    /// (meeting requests, reports, ...) or fail to read return an unflagged result.
+    /// </summary>
+    private static MailFlagInfo ReadFlag(dynamic item)
+    {
+        MailFlagStatus status;
+        try
+        {
+            int rawStatus = item.FlagStatus;
+            status = MailFlags.FromOutlook(rawStatus);
+        }
+        catch
+        {
+            return MailFlagInfo.Empty;
+        }
+
+        if (status == MailFlagStatus.None)
+            return MailFlagInfo.Empty;
+
+        string? request = null;
+        try { request = item.FlagRequest; } catch { }
+
+        DateTime? dueDate = null;
+        try { dueDate = item.TaskDueDate; } catch { }
+
+        DateTime? startDate = null;
+        try { startDate = item.TaskStartDate; } catch { }
+
+        DateTime? completedDate = null;
+        try { completedDate = item.TaskCompletedDate; } catch { }
+
+        return new MailFlagInfo(
+            status,
+            MailFlags.NormalizeRequest(request),
+            MailFlags.NormalizeDate(dueDate),
+            MailFlags.NormalizeDate(startDate),
+            MailFlags.NormalizeDate(completedDate)
+        );
+    }
+
+    private MailMessageSummary MapToSummary(dynamic mail, string folderName, MailFlagInfo? flag = null)
     {
         string senderEmail;
         try
@@ -1893,6 +1956,8 @@ public class OutlookService : IOutlookService
         string? conversationTopic = null;
         try { conversationTopic = mail.ConversationTopic; } catch { }
 
+        MailFlagInfo flagInfo = flag ?? ReadFlag(mail);
+
         return new MailMessageSummary(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1904,11 +1969,17 @@ public class OutlookService : IOutlookService
             attCount > 0,
             attCount,
             ParseCategories(cats),
-            conversationTopic
+            conversationTopic,
+            flagInfo.IsFlagged,
+            flagInfo.StatusName,
+            flagInfo.Request,
+            flagInfo.DueDate,
+            flagInfo.StartDate,
+            flagInfo.CompletedDate
         );
     }
 
-    private MailMessage MapToFull(dynamic mail, string folderName)
+    private MailMessage MapToFull(dynamic mail, string folderName, MailFlagInfo? flag = null)
     {
         string senderEmail;
         try
@@ -1971,6 +2042,8 @@ public class OutlookService : IOutlookService
         string? conversationTopic = null;
         try { conversationTopic = mail.ConversationTopic; } catch { }
 
+        MailFlagInfo flagInfo = flag ?? ReadFlag(mail);
+
         return new MailMessage(
             mail.EntryID,
             mail.Subject ?? "",
@@ -1987,7 +2060,13 @@ public class OutlookService : IOutlookService
             ccList,
             attachmentList,
             ParseCategories(cats),
-            conversationTopic
+            conversationTopic,
+            flagInfo.IsFlagged,
+            flagInfo.StatusName,
+            flagInfo.Request,
+            flagInfo.DueDate,
+            flagInfo.StartDate,
+            flagInfo.CompletedDate
         );
     }
 

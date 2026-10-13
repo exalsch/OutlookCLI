@@ -32,10 +32,14 @@ public class HumanOutputFormatter : IOutputFormatter
         foreach (var msg in messages)
         {
             var unreadMarker = msg.IsUnread ? "[UNREAD] " : "";
+            var flagMarker = FormatFlagMarker(msg.FlagStatus);
             var attachmentMarker = msg.HasAttachments ? " 📎" : "";
-            sb.AppendLine($"{index}. {unreadMarker}{msg.Subject}{attachmentMarker}");
+            sb.AppendLine($"{index}. {unreadMarker}{flagMarker}{msg.Subject}{attachmentMarker}");
             sb.AppendLine($"   From: {msg.SenderName} <{msg.SenderEmail}>");
             sb.AppendLine($"   Date: {msg.ReceivedTime:MMM dd, yyyy h:mm tt}");
+            var flagLine = FormatFlagDetails(msg.FlagStatus, msg.FlagRequest, msg.FlagDueDate, msg.FlagCompletedDate);
+            if (flagLine != null)
+                sb.AppendLine($"   Flag: {flagLine}");
             sb.AppendLine($"   ID: {msg.EntryId[..Math.Min(20, msg.EntryId.Length)]}...");
             sb.AppendLine();
             index++;
@@ -61,12 +65,16 @@ public class HumanOutputFormatter : IOutputFormatter
         foreach (var msg in messages)
         {
             var unreadMarker = msg.IsUnread ? "[UNREAD] " : "";
-            sb.AppendLine($"{index}. {unreadMarker}{msg.Subject}");
+            var flagMarker = FormatFlagMarker(msg.FlagStatus);
+            sb.AppendLine($"{index}. {unreadMarker}{flagMarker}{msg.Subject}");
             sb.AppendLine($"   From: {msg.SenderName} <{msg.SenderEmail}>");
             sb.AppendLine($"   To: {string.Join(", ", msg.To)}");
             if (msg.Cc.Count > 0)
                 sb.AppendLine($"   Cc: {string.Join(", ", msg.Cc)}");
             sb.AppendLine($"   Date: {msg.ReceivedTime:MMM dd, yyyy h:mm tt}");
+            var fullFlagLine = FormatFlagDetails(msg.FlagStatus, msg.FlagRequest, msg.FlagDueDate, msg.FlagCompletedDate);
+            if (fullFlagLine != null)
+                sb.AppendLine($"   Flag: {fullFlagLine}");
             sb.AppendLine($"   ID: {msg.EntryId[..Math.Min(20, msg.EntryId.Length)]}...");
             sb.AppendLine();
             sb.AppendLine($"   Body:");
@@ -103,6 +111,9 @@ public class HumanOutputFormatter : IOutputFormatter
         sb.AppendLine($"Date: {msg.ReceivedTime:MMM dd, yyyy h:mm tt}");
         sb.AppendLine($"Folder: {msg.Folder}");
         sb.AppendLine($"Status: {(msg.IsUnread ? "Unread" : "Read")}");
+        var flagDetails = FormatFlagDetails(msg.FlagStatus, msg.FlagRequest, msg.FlagDueDate, msg.FlagCompletedDate);
+        if (flagDetails != null)
+            sb.AppendLine($"Flag: {flagDetails}");
 
         if (msg.HasAttachments)
         {
@@ -272,6 +283,27 @@ public class HumanOutputFormatter : IOutputFormatter
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static string FormatFlagMarker(string flagStatus) => flagStatus switch
+    {
+        "flagged" => "[FLAGGED] ",
+        "complete" => "[FLAG DONE] ",
+        _ => ""
+    };
+
+    private static string? FormatFlagDetails(string flagStatus, string? request, DateTime? dueDate, DateTime? completedDate)
+    {
+        if (flagStatus == "none") return null;
+
+        var parts = new List<string> { flagStatus };
+        if (!string.IsNullOrEmpty(request))
+            parts.Add(request);
+        if (dueDate.HasValue)
+            parts.Add($"due {dueDate.Value:MMM dd, yyyy}");
+        if (completedDate.HasValue)
+            parts.Add($"completed {completedDate.Value:MMM dd, yyyy}");
+        return string.Join(", ", parts);
     }
 
     private static string FormatSize(long bytes)

@@ -8,11 +8,11 @@ public interface IOutlookService : IDisposable
 
     // Mail operations
     IEnumerable<FolderInfo> GetMailFolders();
-    IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit);
-    IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit);
+    IEnumerable<MailMessageSummary> GetMailList(string? folderName, bool unreadOnly, int limit, MailFlagStatus? flagStatus = null);
+    IEnumerable<MailMessage> GetMailListFull(string? folderName, bool unreadOnly, int limit, MailFlagStatus? flagStatus = null);
     MailMessage? GetMail(string entryId);
     void OpenMail(string entryId);
-    IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName);
+    IEnumerable<MailMessageSummary> SearchMail(string? query, string? from, DateTime? after, DateTime? before, string? folderName, MailFlagStatus? flagStatus = null);
     IEnumerable<MailMessageSummary> GetConversation(string entryId, int limit);
     IEnumerable<MailMessage> GetConversationFull(string entryId, int limit);
     void SendMail(string[] to, string[]? cc, string subject, string body, bool isHtml = false, string[]? attachments = null);
